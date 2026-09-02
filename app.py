@@ -64,6 +64,14 @@ def _query_snowflake():
 _CACHED_DATA = _query_snowflake()
 print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
 
+# Load notes from CSV export
+_NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'notes_data.json')
+_NOTES = {}
+if os.path.exists(_NOTES_PATH):
+    with open(_NOTES_PATH) as f:
+        _NOTES = json.load(f)
+    print(f"Loaded notes for {len(_NOTES)} invoices.")
+
 # ---------------------------------------------------------------------------
 # CSS
 # ---------------------------------------------------------------------------
@@ -189,6 +197,44 @@ tfoot td {
     position: sticky; bottom: 0; z-index: 5;
 }
 tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
+td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
+.notes-icon { font-size: 16px; opacity: 0.6; transition: opacity 0.2s; }
+.notes-icon:hover { opacity: 1; }
+.notes-icon.has-notes { opacity: 1; }
+
+/* Notes modal */
+.notes-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center;
+}
+.notes-overlay.open { display: flex; }
+.notes-modal {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; width: 560px; max-width: 90vw; max-height: 80vh;
+    display: flex; flex-direction: column;
+}
+.notes-modal h4 { font-size: 15px; margin-bottom: 12px; color: var(--text); }
+.notes-modal .inv-label { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.notes-body {
+    flex: 1; overflow-y: auto; white-space: pre-wrap; font-size: 13px;
+    line-height: 1.6; color: var(--text); padding: 12px;
+    background: var(--surface2); border-radius: 8px; margin-bottom: 12px;
+    max-height: 400px;
+}
+.notes-textarea {
+    width: 100%; min-height: 100px; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 12px; font-size: 13px;
+    font-family: inherit; resize: vertical; outline: none; margin-bottom: 12px;
+}
+.notes-textarea:focus { border-color: var(--accent); }
+.notes-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.notes-btn {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.notes-btn:hover { background: var(--border); }
+.notes-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.notes-btn.primary:hover { opacity: 0.9; }
 """
 
 # ---------------------------------------------------------------------------
@@ -325,6 +371,60 @@ function sortTable(colIdx) {
         return 0;
     });
     rows.forEach(function(r) { tbody.appendChild(r); });
+}
+
+// Notes
+var notesData = {};
+var userNotes = {};
+
+function initNotes(data) { notesData = data; }
+
+function getNotes(inv) {
+    return userNotes[inv] || notesData[inv] || '';
+}
+
+function openNotes(inv, custName) {
+    var overlay = document.getElementById('notes-overlay');
+    var existing = getNotes(inv);
+    document.getElementById('notes-inv-label').textContent = inv + ' - ' + custName;
+    var body = document.getElementById('notes-body');
+    var ta = document.getElementById('notes-textarea');
+    if (existing) {
+        body.textContent = existing;
+        body.style.display = '';
+        ta.value = '';
+        ta.placeholder = 'Add additional notes...';
+    } else {
+        body.style.display = 'none';
+        ta.value = '';
+        ta.placeholder = 'Add notes for this invoice...';
+    }
+    overlay.setAttribute('data-inv', inv);
+    overlay.classList.add('open');
+}
+
+function closeNotes() {
+    document.getElementById('notes-overlay').classList.remove('open');
+}
+
+function saveNotes() {
+    var overlay = document.getElementById('notes-overlay');
+    var inv = overlay.getAttribute('data-inv');
+    var ta = document.getElementById('notes-textarea');
+    var newNote = ta.value.trim();
+    if (!newNote) { closeNotes(); return; }
+    var existing = getNotes(inv);
+    var ts = new Date().toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'});
+    var full = ts + ' - ' + newNote;
+    if (existing) {
+        userNotes[inv] = full + '\n---\n' + existing;
+    } else {
+        userNotes[inv] = full;
+    }
+    // update icon
+    var icon = document.querySelector('tr[data-inv="' + inv + '"] .notes-icon');
+    if (icon) { icon.textContent = '\uD83D\uDCD3'; icon.classList.add('has-notes'); }
+    closeNotes();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -472,6 +572,7 @@ def get():
                         th_sort("Balance", 6, right=True),
                         th_sort("Days", 7, right=True),
                         th_sort("Bucket", 8),
+                        Th("Notes", style="text-align:center;cursor:default;"),
                     )),
                     Tbody(*[
                         Tr(
@@ -484,7 +585,16 @@ def get():
                             Td(fm(r['INVOICE_BALANCE']), cls="r", data_val=str(r['INVOICE_BALANCE'])),
                             Td(str(r['DAYS_PAST_DUE']), cls="r", data_val=str(r['DAYS_PAST_DUE'])),
                             Td(badge(r['AGING_BUCKET'])),
-                            data_bucket=r['AGING_BUCKET']
+                            Td(
+                                Span(
+                                    "\U0001F4D3" if _NOTES.get(r['INVOICE_NUMBER']) else "\u270F\uFE0F",
+                                    cls="notes-icon" + (" has-notes" if _NOTES.get(r['INVOICE_NUMBER']) else ""),
+                                ),
+                                cls="notes-cell",
+                                onclick=f"openNotes('{r['INVOICE_NUMBER']}', '{str(r['CUSTOMER_NAME']).replace(chr(39), chr(92)+chr(39))}')",
+                            ),
+                            data_bucket=r['AGING_BUCKET'],
+                            data_inv=r['INVOICE_NUMBER']
                         ) for r in data
                     ]),
                     Tfoot(Tr(
@@ -494,7 +604,7 @@ def get():
                         Td(fm(total_inv_amount), cls="r tf-amt"),
                         Td(""),
                         Td(fm(grand_total), cls="r tf-bal"),
-                        Td(""), Td(""),
+                        Td(""), Td(""), Td(""),
                         id="tfoot-total"
                     )),
                     id="ar-table"
@@ -503,6 +613,24 @@ def get():
             ),
             cls="container"
         ),
+        # Notes modal
+        Div(
+            Div(
+                H4("Collection Notes"),
+                Div("", id="notes-inv-label", cls="inv-label"),
+                Div("", id="notes-body", cls="notes-body"),
+                Textarea(id="notes-textarea", cls="notes-textarea", placeholder="Add notes..."),
+                Div(
+                    Button("Cancel", cls="notes-btn", onclick="closeNotes()"),
+                    Button("Save Note", cls="notes-btn primary", onclick="saveNotes()"),
+                    cls="notes-actions"
+                ),
+                cls="notes-modal"
+            ),
+            id="notes-overlay", cls="notes-overlay", onclick="if(event.target===this)closeNotes()"
+        ),
+        # Inject notes data
+        Script(f"initNotes({json.dumps(_NOTES)});"),
     )
 
 
