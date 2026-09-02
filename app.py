@@ -2,10 +2,10 @@ from fasthtml.common import *
 from starlette.responses import RedirectResponse
 import snowflake.connector
 from datetime import date
-import os
+import os, json
 
 # ---------------------------------------------------------------------------
-# Data layer -- prefetch at startup
+# Data layer
 # ---------------------------------------------------------------------------
 print("Connecting to Snowflake...")
 _CACHED_DATA = None
@@ -100,8 +100,10 @@ body {
 .metrics-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin: 24px 0; }
 .metric-card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 12px; padding: 20px;
+    border-radius: 12px; padding: 20px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
 }
+.metric-card:hover { border-color: var(--accent); }
+.metric-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .metric-card .label {
     font-size: 11px; color: var(--text-muted); text-transform: uppercase;
     letter-spacing: 0.5px; margin-bottom: 4px;
@@ -122,9 +124,14 @@ body {
 .panel h3 { font-size: 14px; margin-bottom: 16px; color: var(--text-muted); }
 
 .bar-chart { display: flex; gap: 16px; align-items: flex-end; height: 140px; padding: 0 12px; }
-.bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 4px; }
+.bar-col {
+    display: flex; flex-direction: column; align-items: center; flex: 1; gap: 4px;
+    cursor: pointer; opacity: 1; transition: opacity 0.2s;
+}
+.bar-col.dimmed { opacity: 0.3; }
+.bar-col:hover { opacity: 1 !important; }
 .bar-val { font-size: 12px; font-weight: 600; color: var(--text); }
-.bar { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; }
+.bar { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; transition: opacity 0.2s; }
 .bar-lbl { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
 .top-list { list-style: none; }
@@ -164,28 +171,165 @@ th {
     background: var(--surface2) !important; padding: 10px 12px; text-align: left;
     font-weight: 600; font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.5px; color: var(--text-muted) !important;
-    border-bottom: 2px solid var(--border);
+    border-bottom: 2px solid var(--border); cursor: pointer; user-select: none;
+    white-space: nowrap;
 }
 th.r { text-align: right; }
+th:hover { color: var(--text) !important; }
+th .arrow { font-size: 10px; margin-left: 4px; opacity: 0.4; }
+th.sorted .arrow { opacity: 1; color: var(--accent); }
 tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: var(--surface2); }
 td { padding: 10px 12px; white-space: nowrap; color: var(--text); }
 td.r { text-align: right; font-variant-numeric: tabular-nums; }
 td.cust { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+tfoot td {
+    padding: 10px 12px; font-weight: 700; color: var(--accent);
+    border-top: 2px solid var(--border); background: var(--surface2);
+    position: sticky; bottom: 0; z-index: 5;
+}
+tfoot td.r { text-align: right; font-variant-numeric: tabular-nums; }
 """
 
+# ---------------------------------------------------------------------------
+# JS -- all interactive behavior
+# ---------------------------------------------------------------------------
 JS = """
-function filterTable() {
+var activeBucket = null;
+var sortCol = -1;
+var sortAsc = true;
+
+function fm(n) {
+    return '$' + n.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
+}
+
+function getVisibleRows() {
+    return Array.from(document.querySelectorAll('#ar-table tbody tr')).filter(
+        function(r) { return r.style.display !== 'none'; }
+    );
+}
+
+function updateTotals() {
+    var rows = getVisibleRows();
+    var totalAmt = 0, totalBal = 0, count = 0;
+    rows.forEach(function(r) {
+        var cells = r.querySelectorAll('td');
+        totalAmt += parseFloat(cells[4].getAttribute('data-val') || 0);
+        totalBal += parseFloat(cells[6].getAttribute('data-val') || 0);
+        count++;
+    });
+    var foot = document.getElementById('tfoot-total');
+    if (foot) {
+        foot.querySelector('.tf-count').textContent = count + ' invoices';
+        foot.querySelector('.tf-amt').textContent = fm(totalAmt);
+        foot.querySelector('.tf-bal').textContent = fm(totalBal);
+    }
+}
+
+function updateTop10() {
+    var rows = getVisibleRows();
+    var custs = {};
+    rows.forEach(function(r) {
+        var cells = r.querySelectorAll('td');
+        var name = cells[1].textContent;
+        var bal = parseFloat(cells[6].getAttribute('data-val') || 0);
+        custs[name] = (custs[name] || 0) + bal;
+    });
+    var sorted = Object.entries(custs).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 10);
+    var ul = document.getElementById('top10-list');
+    ul.innerHTML = '';
+    sorted.forEach(function(pair) {
+        var li = document.createElement('li');
+        li.innerHTML = '<span class="top-name">' + pair[0] + '</span><span class="top-amt">' + fm(pair[1]) + '</span>';
+        ul.appendChild(li);
+    });
+}
+
+function applyFilters() {
     var s = document.getElementById('search').value.toLowerCase();
     var b = document.getElementById('bucket-filter').value;
+    var bucket = activeBucket || b;
     document.querySelectorAll('#ar-table tbody tr').forEach(function(row) {
         var text = row.textContent.toLowerCase();
         var rb = row.getAttribute('data-bucket');
         var ms = !s || text.indexOf(s) >= 0;
-        var mb = !b || rb === b;
+        var mb = !bucket || rb === bucket;
         row.style.display = (ms && mb) ? '' : 'none';
     });
+    updateTotals();
+    updateTop10();
 }
+
+function filterByBucket(bucket) {
+    if (activeBucket === bucket) {
+        activeBucket = null;
+    } else {
+        activeBucket = bucket;
+    }
+    // update card active states
+    document.querySelectorAll('.metric-card').forEach(function(c) {
+        var cb = c.getAttribute('data-bucket');
+        if (activeBucket && cb === activeBucket) {
+            c.classList.add('active');
+        } else {
+            c.classList.remove('active');
+        }
+    });
+    // update bar dimming
+    document.querySelectorAll('.bar-col').forEach(function(col) {
+        var bb = col.getAttribute('data-bucket');
+        if (activeBucket && bb !== activeBucket) {
+            col.classList.add('dimmed');
+        } else {
+            col.classList.remove('dimmed');
+        }
+    });
+    // sync dropdown
+    document.getElementById('bucket-filter').value = activeBucket || '';
+    applyFilters();
+}
+
+function sortTable(colIdx) {
+    if (sortCol === colIdx) {
+        sortAsc = !sortAsc;
+    } else {
+        sortCol = colIdx;
+        sortAsc = true;
+    }
+    // update arrows
+    document.querySelectorAll('#ar-table thead th').forEach(function(th, i) {
+        var arrow = th.querySelector('.arrow');
+        if (!arrow) return;
+        th.classList.remove('sorted');
+        arrow.textContent = '\\u2195';
+        if (i === colIdx) {
+            th.classList.add('sorted');
+            arrow.textContent = sortAsc ? '\\u2191' : '\\u2193';
+        }
+    });
+    var tbody = document.querySelector('#ar-table tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a, b) {
+        var ca = a.querySelectorAll('td')[colIdx];
+        var cb = b.querySelectorAll('td')[colIdx];
+        var va = ca.getAttribute('data-val');
+        var vb = cb.getAttribute('data-val');
+        if (va !== null && vb !== null) {
+            va = parseFloat(va); vb = parseFloat(vb);
+        } else {
+            va = ca.textContent.toLowerCase();
+            vb = cb.textContent.toLowerCase();
+        }
+        if (va < vb) return sortAsc ? -1 : 1;
+        if (va > vb) return sortAsc ? 1 : -1;
+        return 0;
+    });
+    rows.forEach(function(r) { tbody.appendChild(r); });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateTotals();
+});
 """
 
 # ---------------------------------------------------------------------------
@@ -222,6 +366,7 @@ def get():
     counts = {b: len(rs) for b, rs in buckets.items()}
     grand_total = sum(totals.values())
     grand_count = sum(counts.values())
+    total_inv_amount = sum(r['INVOICE_AMOUNT'] for r in data)
 
     cust_totals = {}
     for r in data:
@@ -231,6 +376,13 @@ def get():
 
     mx = max(totals.values()) if totals.values() else 1
     bc = {'31-60':'#f5c542','61-90':'#f59e42','91-120':'#f54242','120+':'#ff6b6b'}
+
+    def th_sort(label, idx, right=False):
+        cls = "r" if right else ""
+        return Th(
+            Span(label), Span("\u2195", cls="arrow"),
+            cls=cls, onclick=f"sortTable({idx})"
+        )
 
     return Div(
         # Header
@@ -249,13 +401,18 @@ def get():
         ),
 
         Div(
-            # KPI cards
+            # KPI cards -- clickable
             Div(
-                Div(Div("Total Outstanding", cls="label"), Div(fm(grand_total), cls="value"), Div(f"{grand_count} invoices past due 31+ days", cls="sub"), cls="metric-card c-total"),
-                Div(Div("31-60 Days", cls="label"), Div(fm(totals.get('31-60',0)), cls="value"), Div(f"{counts.get('31-60',0)} invoices", cls="sub"), cls="metric-card c-31"),
-                Div(Div("61-90 Days", cls="label"), Div(fm(totals.get('61-90',0)), cls="value"), Div(f"{counts.get('61-90',0)} invoices", cls="sub"), cls="metric-card c-61"),
-                Div(Div("91-120 Days", cls="label"), Div(fm(totals.get('91-120',0)), cls="value"), Div(f"{counts.get('91-120',0)} invoices", cls="sub"), cls="metric-card c-91"),
-                Div(Div("120+ Days", cls="label"), Div(fm(totals.get('120+',0)), cls="value"), Div(f"{counts.get('120+',0)} invoices", cls="sub"), cls="metric-card c-120"),
+                Div(Div("Total Outstanding", cls="label"), Div(fm(grand_total), cls="value"), Div(f"{grand_count} invoices past due 31+ days", cls="sub"),
+                    cls="metric-card c-total", data_bucket="", onclick="filterByBucket('')"),
+                Div(Div("31-60 Days", cls="label"), Div(fm(totals.get('31-60',0)), cls="value"), Div(f"{counts.get('31-60',0)} invoices", cls="sub"),
+                    cls="metric-card c-31", data_bucket="31-60", onclick="filterByBucket('31-60')"),
+                Div(Div("61-90 Days", cls="label"), Div(fm(totals.get('61-90',0)), cls="value"), Div(f"{counts.get('61-90',0)} invoices", cls="sub"),
+                    cls="metric-card c-61", data_bucket="61-90", onclick="filterByBucket('61-90')"),
+                Div(Div("91-120 Days", cls="label"), Div(fm(totals.get('91-120',0)), cls="value"), Div(f"{counts.get('91-120',0)} invoices", cls="sub"),
+                    cls="metric-card c-91", data_bucket="91-120", onclick="filterByBucket('91-120')"),
+                Div(Div("120+ Days", cls="label"), Div(fm(totals.get('120+',0)), cls="value"), Div(f"{counts.get('120+',0)} invoices", cls="sub"),
+                    cls="metric-card c-120", data_bucket="120+", onclick="filterByBucket('120+')"),
                 cls="metrics-row"
             ),
 
@@ -268,7 +425,7 @@ def get():
                             Div(fm(totals.get(b,0)), cls="bar-val"),
                             Div(style=f"height:{max(int(totals.get(b,0)/mx*120),4)}px;background:{bc[b]};", cls="bar"),
                             Div(b, cls="bar-lbl"),
-                            cls="bar-col"
+                            cls="bar-col", data_bucket=b, onclick=f"filterByBucket('{b}')"
                         ) for b in ['31-60','61-90','91-120','120+']],
                         cls="bar-chart"
                     ),
@@ -281,7 +438,7 @@ def get():
                             Span(n, cls="top-name"),
                             Span(fm(a), cls="top-amt")
                         ) for n, a in top10],
-                        cls="top-list"
+                        cls="top-list", id="top10-list"
                     ),
                     cls="panel"
                 ),
@@ -290,14 +447,14 @@ def get():
 
             # Filters
             Div(
-                Input(id="search", placeholder="Search customer or invoice...", oninput="filterTable()"),
+                Input(id="search", placeholder="Search customer or invoice...", oninput="applyFilters()"),
                 Select(
                     Option("All Buckets", value=""),
                     Option("31-60 Days", value="31-60"),
                     Option("61-90 Days", value="61-90"),
                     Option("91-120 Days", value="91-120"),
                     Option("120+ Days", value="120+"),
-                    id="bucket-filter", onchange="filterTable()"
+                    id="bucket-filter", onchange="activeBucket=this.value;applyFilters()"
                 ),
                 cls="filter-bar"
             ),
@@ -306,25 +463,40 @@ def get():
             Div(
                 Table(
                     Thead(Tr(
-                        Th("Acct #"), Th("Customer"), Th("Invoice #"),
-                        Th("Inv Date"), Th("Inv Amount", cls="r"),
-                        Th("Due Date"), Th("Balance", cls="r"),
-                        Th("Days", cls="r"), Th("Bucket")
+                        th_sort("Acct #", 0),
+                        th_sort("Customer", 1),
+                        th_sort("Invoice #", 2),
+                        th_sort("Inv Date", 3),
+                        th_sort("Inv Amount", 4, right=True),
+                        th_sort("Due Date", 5),
+                        th_sort("Balance", 6, right=True),
+                        th_sort("Days", 7, right=True),
+                        th_sort("Bucket", 8),
                     )),
                     Tbody(*[
                         Tr(
-                            Td(str(r['ACCOUNT_NUMBER'])),
+                            Td(str(r['ACCOUNT_NUMBER']), data_val=str(r['ACCOUNT_NUMBER'])),
                             Td(str(r['CUSTOMER_NAME']), cls="cust"),
                             Td(str(r['INVOICE_NUMBER'])),
-                            Td(str(r['INVOICE_DATE'])),
-                            Td(fm(r['INVOICE_AMOUNT']), cls="r"),
-                            Td(str(r['DUE_DATE'])),
-                            Td(fm(r['INVOICE_BALANCE']), cls="r"),
-                            Td(str(r['DAYS_PAST_DUE']), cls="r"),
+                            Td(str(r['INVOICE_DATE']), data_val=str(r['INVOICE_DATE'])),
+                            Td(fm(r['INVOICE_AMOUNT']), cls="r", data_val=str(r['INVOICE_AMOUNT'])),
+                            Td(str(r['DUE_DATE']), data_val=str(r['DUE_DATE'])),
+                            Td(fm(r['INVOICE_BALANCE']), cls="r", data_val=str(r['INVOICE_BALANCE'])),
+                            Td(str(r['DAYS_PAST_DUE']), cls="r", data_val=str(r['DAYS_PAST_DUE'])),
                             Td(badge(r['AGING_BUCKET'])),
                             data_bucket=r['AGING_BUCKET']
                         ) for r in data
                     ]),
+                    Tfoot(Tr(
+                        Td(""),
+                        Td(Span(f"{grand_count} invoices", cls="tf-count"), style="font-weight:700;"),
+                        Td(""), Td(""),
+                        Td(fm(total_inv_amount), cls="r tf-amt"),
+                        Td(""),
+                        Td(fm(grand_total), cls="r tf-bal"),
+                        Td(""), Td(""),
+                        id="tfoot-total"
+                    )),
                     id="ar-table"
                 ),
                 cls="table-wrap"
