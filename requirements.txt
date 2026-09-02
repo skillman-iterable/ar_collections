@@ -1,2 +1,3 @@
 python-fasthtml
 snowflake-connector-python[secure-local-storage]
+cryptography
