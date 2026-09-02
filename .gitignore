@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+ar_aging_venv/
+.env
+*.egg-info/
+dist/
+build/
