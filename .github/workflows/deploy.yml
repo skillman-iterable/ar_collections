@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PROJECT_ID: ar-collections-71c42
+  PROJECT_ID: udi-uat-504519
   REGION: us-central1
   SERVICE: ar-collections
-  IMAGE: us-central1-docker.pkg.dev/ar-collections-71c42/ar-collections/ar-collections
+  IMAGE: us-central1-docker.pkg.dev/udi-uat-504519/udi/ar-collections
 
 jobs:
   deploy:
