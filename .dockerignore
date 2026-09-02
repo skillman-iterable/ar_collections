@@ -1,0 +1,6 @@
+ar_aging_venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+README.md

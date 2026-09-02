@@ -2,15 +2,35 @@ from fasthtml.common import *
 from starlette.responses import RedirectResponse
 import snowflake.connector
 from datetime import date
+import os
 
 # ---------------------------------------------------------------------------
-# Data layer -- prefetch at startup so OAuth popup happens before server binds
+# Data layer -- prefetch at startup
 # ---------------------------------------------------------------------------
-print("Connecting to Snowflake (OAuth browser auth may be required)...")
+print("Connecting to Snowflake...")
 _CACHED_DATA = None
 
+def _get_connection():
+    private_key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH")
+    if private_key_path:
+        from cryptography.hazmat.primitives import serialization
+        with open(private_key_path, "rb") as f:
+            p_key = serialization.load_pem_private_key(f.read(), password=None)
+        pkb = p_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return snowflake.connector.connect(
+            account=os.environ.get("SNOWFLAKE_ACCOUNT", "PP13258-ITERABLE"),
+            user=os.environ.get("SNOWFLAKE_USER", "shawn.skillman@iterable.com"),
+            private_key=pkb,
+            warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "BILLING_PIPE"),
+        )
+    return snowflake.connector.connect(connection_name='pp13258-iterable')
+
 def _query_snowflake():
-    conn = snowflake.connector.connect(connection_name='pp13258-iterable')
+    conn = _get_connection()
     cur = conn.cursor()
     cur.execute("""
         SELECT
@@ -321,4 +341,4 @@ def refresh_data():
     return RedirectResponse("/", status_code=303)
 
 
-serve(port=5099)
+serve(host="0.0.0.0", port=int(os.environ.get("PORT", 5099)))
