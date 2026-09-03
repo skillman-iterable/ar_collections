@@ -72,7 +72,7 @@ def _query_single_customer(acct_num, conn=None):
             c.ENTITYID AS account_number,
             c.COMPANYNAME AS customer_name,
             c.CUSTENTITY_ITR_ORG_ID AS org_id,
-            sa.ID AS sfdc_account_id,
+            sa.sfdc_account_id,
             ba.ATTENTION AS bill_attention, ba.ADDRESSEE AS bill_addressee,
             ba.ADDR1 AS bill_addr1, ba.ADDR2 AS bill_addr2,
             ba.CITY AS bill_city, ba.STATE AS bill_state, ba.ZIP AS bill_zip, ba.COUNTRY AS bill_country,
@@ -84,8 +84,12 @@ def _query_single_customer(acct_num, conn=None):
             ON c.DEFAULTBILLINGADDRESS = ba.NKEY AND ba._FIVETRAN_DELETED = false
         LEFT JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMERADDRESSBOOKENTITYADDRESS sha
             ON c.DEFAULTSHIPPINGADDRESS = sha.NKEY AND sha._FIVETRAN_DELETED = false
-        LEFT JOIN FIVETRAN_DB.FT_SALESFORCE.ACCOUNT sa
-            ON TRIM(UPPER(c.COMPANYNAME)) = TRIM(UPPER(sa.NAME)) AND sa.IS_DELETED = false
+        LEFT JOIN (
+            SELECT ID AS sfdc_account_id, NAME
+            FROM FIVETRAN_DB.FT_SALESFORCE.ACCOUNT
+            WHERE IS_DELETED = false
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY TRIM(UPPER(NAME)) ORDER BY CREATED_DATE DESC) = 1
+        ) sa ON TRIM(UPPER(c.COMPANYNAME)) = TRIM(UPPER(sa.NAME))
         WHERE c._FIVETRAN_DELETED = false
           AND c.ENTITYID = %s
     """, (acct_num,))
@@ -96,25 +100,16 @@ def _query_single_customer(acct_num, conn=None):
     cols = [d[0] for d in cur.description]
     detail = dict(zip(cols, rows[0]))
     detail['contacts'] = []
-    # Collect all SFDC IDs (customer may match multiple SFDC accounts)
-    sfdc_ids = set()
-    for r in rows:
-        d = dict(zip(cols, r))
-        sid = d.get('SFDC_ACCOUNT_ID')
-        if sid:
-            sfdc_ids.add(sid)
-            if not detail.get('SFDC_ACCOUNT_ID'):
-                detail['SFDC_ACCOUNT_ID'] = sid
-    # Fetch contacts for matched SFDC accounts
-    if sfdc_ids:
-        id_list = ",".join([f"'{sid}'" for sid in sfdc_ids])
-        cur.execute(f"""
+    sfdc_id = detail.get('SFDC_ACCOUNT_ID')
+    # Fetch contacts for matched SFDC account
+    if sfdc_id:
+        cur.execute("""
             SELECT ACCOUNT_ID, NAME, TITLE, EMAIL, PHONE
             FROM FIVETRAN_DB.FT_SALESFORCE.CONTACT
-            WHERE ACCOUNT_ID IN ({id_list})
+            WHERE ACCOUNT_ID = %s
               AND IS_DELETED = false
             ORDER BY NAME
-        """)
+        """, (sfdc_id,))
         seen = set()
         for cr in cur.fetchall():
             contact = {
@@ -311,6 +306,28 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 .notes-btn.primary:hover { opacity: 0.9; }
 
 /* Customer detail drawer */
+.drawer-loading {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 48px 24px; color: var(--text-muted);
+}
+.drawer-loading .braille-dots {
+    font-size: 28px; letter-spacing: 4px; font-family: monospace;
+}
+.drawer-loading .braille-dots span {
+    display: inline-block; animation: braille-pulse 1.4s ease-in-out infinite;
+}
+.drawer-loading .braille-dots span:nth-child(2) { animation-delay: 0.2s; }
+.drawer-loading .braille-dots span:nth-child(3) { animation-delay: 0.4s; }
+.drawer-loading .braille-dots span:nth-child(4) { animation-delay: 0.6s; }
+.drawer-loading .braille-dots span:nth-child(5) { animation-delay: 0.8s; }
+.drawer-loading .braille-dots span:nth-child(6) { animation-delay: 1.0s; }
+@keyframes braille-pulse {
+    0%, 100% { opacity: 0.2; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+.drawer-loading .loading-text {
+    margin-top: 16px; font-size: 13px; font-weight: 500;
+}
 .drawer-overlay {
     display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.5); z-index: 900;
@@ -754,6 +771,7 @@ function saveNotes() {
 }
 
 // Customer detail drawer
+var _drawerVersion = 0;
 function openDrawer(acctNum, custName) {
     // Highlight the row
     document.querySelectorAll('#ar-table tbody tr.selected').forEach(function(r) { r.classList.remove('selected'); });
@@ -767,26 +785,26 @@ function openDrawer(acctNum, custName) {
     if (dh) dh.textContent = custName || '';
     var da = document.getElementById('drawer-acct-num');
     if (da) da.textContent = 'Acct #' + acctNum;
-    // Fetch drawer content via HTMX-like fetch
+    // Show braille dots loading animation
     var drawer = document.getElementById('customer-drawer');
     var overlay = document.getElementById('drawer-overlay');
     var body = document.getElementById('drawer-body');
-    body.innerHTML = '<div style="padding:24px;color:var(--text-muted);">Loading...</div>';
+    body.innerHTML = '<div class="drawer-loading">' +
+        '<div class="braille-dots">' +
+        '<span>\u2801</span><span>\u2803</span><span>\u2807</span>' +
+        '<span>\u2847</span><span>\u28C7</span><span>\u28FF</span>' +
+        '</div>' +
+        '<div class="loading-text">Fetching account details\u2026</div>' +
+        '</div>';
     drawer.classList.add('open');
     overlay.classList.add('open');
+    // Track version to discard stale responses
+    var thisVersion = ++_drawerVersion;
     fetch('/customer-detail/' + encodeURIComponent(acctNum))
         .then(function(r) { return r.text(); })
         .then(function(html) {
-            body.innerHTML = html;
-            // Auto-retry if still loading
-            if (html.indexOf('Loading customer data') >= 0) {
-                setTimeout(function() {
-                    if (drawer.classList.contains('open')) {
-                        fetch('/customer-detail/' + encodeURIComponent(acctNum))
-                            .then(function(r) { return r.text(); })
-                            .then(function(h) { body.innerHTML = h; });
-                    }
-                }, 5000);
+            if (_drawerVersion === thisVersion) {
+                body.innerHTML = html;
             }
         });
 }
