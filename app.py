@@ -294,16 +294,6 @@ body {
 .export-menu a:hover { background: var(--surface2); }
 .export-menu a .exp-icon { font-size: 16px; width: 20px; text-align: center; }
 
-/* Export toast */
-.export-toast {
-    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 20px; font-size: 13px; color: var(--text); z-index: 9999;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.3); opacity: 0; transition: all 0.3s;
-}
-.export-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.export-toast a { color: var(--accent); text-decoration: underline; }
-
 /* Enrichment grids */
 .enrich-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 0;
@@ -930,17 +920,6 @@ document.addEventListener('click', function() {
     var m = document.getElementById('export-menu');
     if (m) m.classList.remove('open');
 });
-function exportGSheets() {
-    // Download CSV from server (includes all data, not just visible)
-    // then show toast with instructions
-    window.location.href = '/export/csv';
-    var toast = document.createElement('div');
-    toast.className = 'export-toast';
-    toast.innerHTML = 'CSV downloaded \u2014 open <a href="https://sheets.google.com/create" target="_blank">Google Sheets</a> and use <b>File \u2192 Import</b>';
-    document.body.appendChild(toast);
-    setTimeout(function() { toast.classList.add('show'); }, 10);
-    setTimeout(function() { toast.classList.remove('show'); setTimeout(function() { toast.remove(); }, 300); }, 6000);
-}
 
 function saveResolution(acctNum, value) {
     fetch('/save-resolution/' + encodeURIComponent(acctNum), {
@@ -1645,7 +1624,6 @@ def get():
                     Div(
                         A(Span("📄", cls="exp-icon"), "CSV", href="/export/csv"),
                         A(Span("📊", cls="exp-icon"), "Excel (.xlsx)", href="/export/excel"),
-                        A(Span("🟩", cls="exp-icon"), "Google Sheets", href="#", onclick="event.preventDefault();exportGSheets()"),
                         id="export-menu", cls="export-menu"
                     ),
                     cls="export-wrap"
