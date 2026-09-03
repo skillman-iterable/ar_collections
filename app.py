@@ -2,14 +2,13 @@ from fasthtml.common import *
 from starlette.responses import RedirectResponse
 import snowflake.connector
 from datetime import date
-import os, json, threading
+import os, json
 
 # ---------------------------------------------------------------------------
 # Data layer
 # ---------------------------------------------------------------------------
 print("Connecting to Snowflake (OAuth browser auth may be required)...")
 _CACHED_DATA = None
-_CUSTOMER_DETAIL = {}  # keyed by account_number (ENTITYID)
 
 def _get_connection():
     private_key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH")
@@ -63,23 +62,20 @@ def _query_snowflake(conn=None):
     if own_conn: conn.close()
     return [dict(zip(cols, r)) for r in rows]
 
-def _query_customer_details(conn=None):
-    """Fetch addresses, org ID, SFDC account ID, and contacts for all AR customers."""
+def _query_single_customer(acct_num, conn=None):
+    """Fetch addresses, org ID, SFDC account ID, and contacts for ONE customer."""
     own_conn = conn is None
     if own_conn: conn = _get_connection()
     cur = conn.cursor()
-    # Get customer metadata + addresses
     cur.execute("""
         SELECT
             c.ENTITYID AS account_number,
             c.COMPANYNAME AS customer_name,
             c.CUSTENTITY_ITR_ORG_ID AS org_id,
             sa.ID AS sfdc_account_id,
-            -- Bill-to
             ba.ATTENTION AS bill_attention, ba.ADDRESSEE AS bill_addressee,
             ba.ADDR1 AS bill_addr1, ba.ADDR2 AS bill_addr2,
             ba.CITY AS bill_city, ba.STATE AS bill_state, ba.ZIP AS bill_zip, ba.COUNTRY AS bill_country,
-            -- Ship-to
             sha.ATTENTION AS ship_attention, sha.ADDRESSEE AS ship_addressee,
             sha.ADDR1 AS ship_addr1, sha.ADDR2 AS ship_addr2,
             sha.CITY AS ship_city, sha.STATE AS ship_state, sha.ZIP AS ship_zip, sha.COUNTRY AS ship_country
@@ -91,36 +87,25 @@ def _query_customer_details(conn=None):
         LEFT JOIN FIVETRAN_DB.FT_SALESFORCE.ACCOUNT sa
             ON TRIM(UPPER(c.COMPANYNAME)) = TRIM(UPPER(sa.NAME)) AND sa.IS_DELETED = false
         WHERE c._FIVETRAN_DELETED = false
-          AND c.ENTITYID IN (
-              SELECT DISTINCT c2.ENTITYID
-              FROM FIVETRAN_DB.NETSUITE_SUITE.TRANSACTION t
-              JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMER c2 ON t.ENTITY = c2.ID
-              WHERE t.TYPE = 'CustInvc' AND t._FIVETRAN_DELETED = false
-                AND t.FOREIGNAMOUNTUNPAID > 0
-                AND DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) >= 31
-          )
-    """)
+          AND c.ENTITYID = %s
+    """, (acct_num,))
     rows = cur.fetchall()
+    if not rows:
+        if own_conn: conn.close()
+        return {}
     cols = [d[0] for d in cur.description]
-    details = {}
+    detail = dict(zip(cols, rows[0]))
+    detail['contacts'] = []
+    # Collect all SFDC IDs (customer may match multiple SFDC accounts)
     sfdc_ids = set()
-    acct_sfdc_ids = {}  # account_number -> set of all matching SFDC IDs
     for r in rows:
         d = dict(zip(cols, r))
-        acct = d['ACCOUNT_NUMBER']
-        if acct not in details:
-            details[acct] = d
-            details[acct]['contacts'] = []
-            acct_sfdc_ids[acct] = set()
         sid = d.get('SFDC_ACCOUNT_ID')
         if sid:
             sfdc_ids.add(sid)
-            acct_sfdc_ids[acct].add(sid)
-            # Keep first non-None SFDC ID for display
-            if not details[acct].get('SFDC_ACCOUNT_ID'):
-                details[acct]['SFDC_ACCOUNT_ID'] = sid
-
-    # Fetch contacts for all matched SFDC accounts
+            if not detail.get('SFDC_ACCOUNT_ID'):
+                detail['SFDC_ACCOUNT_ID'] = sid
+    # Fetch contacts for matched SFDC accounts
     if sfdc_ids:
         id_list = ",".join([f"'{sid}'" for sid in sfdc_ids])
         cur.execute(f"""
@@ -130,52 +115,26 @@ def _query_customer_details(conn=None):
               AND IS_DELETED = false
             ORDER BY NAME
         """)
-        contact_rows = cur.fetchall()
-        # Map contacts to account_numbers (using ALL matching SFDC IDs per customer)
-        sfdc_to_acct = {}
-        for acct, sids in acct_sfdc_ids.items():
-            for sid in sids:
-                sfdc_to_acct.setdefault(sid, []).append(acct)
-        for cr in contact_rows:
-            sid = cr[0]
-            for acct in sfdc_to_acct.get(sid, []):
-                contact = {
-                    'name': cr[1] or '', 'title': cr[2] or '',
-                    'email': cr[3] or '', 'phone': cr[4] or ''
-                }
-                # Deduplicate by email (or name if no email)
-                key = contact['email'] or contact['name']
-                existing_keys = {(c['email'] or c['name']) for c in details[acct]['contacts']}
-                if key not in existing_keys:
-                    details[acct]['contacts'].append(contact)
-
+        seen = set()
+        for cr in cur.fetchall():
+            contact = {
+                'name': cr[1] or '', 'title': cr[2] or '',
+                'email': cr[3] or '', 'phone': cr[4] or ''
+            }
+            key = contact['email'] or contact['name']
+            if key not in seen:
+                seen.add(key)
+                detail['contacts'].append(contact)
     if own_conn: conn.close()
-    return details
+    return detail
 
 _startup_conn = _get_connection()
 _CACHED_DATA = _query_snowflake(_startup_conn)
 _startup_conn.close()
 print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
 
-# Customer detail loads in a background thread so the app starts fast
-# but drawer data is ready by the time someone clicks
-_CUSTOMER_DETAIL = None
-_CUSTOMER_DETAIL_LOADING = False
-
-def _load_customer_detail_bg():
-    global _CUSTOMER_DETAIL, _CUSTOMER_DETAIL_LOADING
-    _CUSTOMER_DETAIL_LOADING = True
-    try:
-        print("Background: loading customer detail...")
-        _CUSTOMER_DETAIL = _query_customer_details()
-        print(f"Background: loaded detail for {len(_CUSTOMER_DETAIL)} customers.")
-    except Exception as e:
-        print(f"Background: failed to load customer detail: {e}")
-    finally:
-        _CUSTOMER_DETAIL_LOADING = False
-
-# Start background load immediately after startup
-threading.Thread(target=_load_customer_detail_bg, daemon=True).start()
+# On-demand cache for customer detail (keyed by account number)
+_CUSTOMER_DETAIL_CACHE = {}
 
 # Load notes from CSV export
 _NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'notes_data.json')
@@ -1175,16 +1134,15 @@ def _esc(s):
 
 @rt("/customer-detail/{acct_num}")
 def get_customer_detail(acct_num: str):
-    if _CUSTOMER_DETAIL is None:
-        if _CUSTOMER_DETAIL_LOADING:
-            return Div(Div(
-                Div("Loading customer data...", style="font-size:14px;color:var(--text);margin-bottom:8px;"),
-                Div("Detail is being fetched from Snowflake. This typically takes 30-60 seconds on first load.", style="font-size:12px;color:var(--text-muted);margin-bottom:16px;"),
-                Div("Try again in a moment.", style="font-size:12px;color:var(--accent);"),
-                style="padding:24px;"
-            ))
-        return Div(Div("Customer detail is not available.", cls="no-data", style="padding:24px;"))
-    d = _CUSTOMER_DETAIL.get(acct_num, {})
+    # On-demand fetch with caching
+    d = _CUSTOMER_DETAIL_CACHE.get(acct_num)
+    if d is None:
+        try:
+            d = _query_single_customer(acct_num)
+            _CUSTOMER_DETAIL_CACHE[acct_num] = d
+        except Exception as e:
+            print(f"Error loading detail for {acct_num}: {e}")
+            d = {}
     if not d:
         return Div(Div("No detail available for this account.", cls="no-data", style="padding:24px;"))
 
@@ -1610,10 +1568,9 @@ def get():
 
 @rt("/refresh")
 def refresh_data():
-    global _CACHED_DATA, _CUSTOMER_DETAIL
+    global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
     _CACHED_DATA = _query_snowflake()
-    _CUSTOMER_DETAIL = None
-    threading.Thread(target=_load_customer_detail_bg, daemon=True).start()
+    _CUSTOMER_DETAIL_CACHE = {}
     return RedirectResponse("/", status_code=303)
 
 
