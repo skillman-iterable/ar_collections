@@ -541,7 +541,8 @@ function sortTable(colIdx) {
         var va = ca.getAttribute('data-val');
         var vb = cb.getAttribute('data-val');
         if (va !== null && vb !== null) {
-            va = parseFloat(va); vb = parseFloat(vb);
+            var na = Number(va), nb = Number(vb);
+            if (!isNaN(na) && !isNaN(nb)) { va = na; vb = nb; }
         } else {
             va = ca.textContent.toLowerCase();
             vb = cb.textContent.toLowerCase();
