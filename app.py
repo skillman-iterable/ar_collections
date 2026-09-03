@@ -270,6 +270,11 @@ function updateTotals() {
         foot.querySelector('.tf-amt').textContent = fm(totalAmt);
         foot.querySelector('.tf-bal').textContent = fm(totalBal);
     }
+    // update header
+    var hc = document.getElementById('header-count');
+    var ht = document.getElementById('header-total');
+    if (hc) hc.textContent = count + ' invoices';
+    if (ht) ht.textContent = fm(totalBal);
 }
 
 function updateTop10() {
@@ -492,8 +497,8 @@ def get():
                 Div(f"Live from NetSuite via Snowflake  \u00b7  {today}", cls="subtitle"),
             ),
             Div(
-                Span(f"{grand_count} invoices", cls="header-count"),
-                Span(fm(grand_total), cls="header-total"),
+                Span(f"{grand_count} invoices", cls="header-count", id="header-count"),
+                Span(fm(grand_total), cls="header-total", id="header-total"),
                 A("Refresh", href="/refresh", cls="refresh-btn"),
                 cls="header-right"
             ),
