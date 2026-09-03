@@ -1858,12 +1858,18 @@ def export_data(fmt: str):
                "Resolution Category", "Account Owner", "CSM", "CSM Manager", "AE", "CAM",
                "Market Segment", "Subsidiary", "Category", "Payment Method", "Customer Bank"]
     rows = []
-    # Build account-level enrichment cache for export
+    # Build account-level enrichment — fetch any not already cached
     acct_detail_cache = {}
     for r in data:
         acct = str(r.get('ACCOUNT_NUMBER', ''))
         if acct not in acct_detail_cache:
-            d = _CUSTOMER_DETAIL_CACHE.get(acct, {})
+            d = _CUSTOMER_DETAIL_CACHE.get(acct)
+            if d is None:
+                try:
+                    d = _query_single_customer(acct)
+                    _CUSTOMER_DETAIL_CACHE[acct] = d
+                except Exception:
+                    d = {}
             acct_detail_cache[acct] = d
         d = acct_detail_cache[acct]
         inv_num = str(r.get('INVOICE_NUMBER', ''))
