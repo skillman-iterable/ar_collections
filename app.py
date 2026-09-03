@@ -310,20 +310,8 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     padding: 48px 24px; color: var(--text-muted);
 }
-.drawer-loading .braille-dots {
-    font-size: 28px; letter-spacing: 4px; font-family: monospace;
-}
-.drawer-loading .braille-dots span {
-    display: inline-block; animation: braille-pulse 1.4s ease-in-out infinite;
-}
-.drawer-loading .braille-dots span:nth-child(2) { animation-delay: 0.2s; }
-.drawer-loading .braille-dots span:nth-child(3) { animation-delay: 0.4s; }
-.drawer-loading .braille-dots span:nth-child(4) { animation-delay: 0.6s; }
-.drawer-loading .braille-dots span:nth-child(5) { animation-delay: 0.8s; }
-.drawer-loading .braille-dots span:nth-child(6) { animation-delay: 1.0s; }
-@keyframes braille-pulse {
-    0%, 100% { opacity: 0.2; transform: scale(0.8); }
-    50% { opacity: 1; transform: scale(1.2); }
+.drawer-loading .braille-spinner {
+    font-size: 32px; font-family: monospace; width: 1.2em; text-align: center;
 }
 .drawer-loading .loading-text {
     margin-top: 16px; font-size: 13px; font-weight: 500;
@@ -790,12 +778,17 @@ function openDrawer(acctNum, custName) {
     var overlay = document.getElementById('drawer-overlay');
     var body = document.getElementById('drawer-body');
     body.innerHTML = '<div class="drawer-loading">' +
-        '<div class="braille-dots">' +
-        '<span>\u2801</span><span>\u2803</span><span>\u2807</span>' +
-        '<span>\u2847</span><span>\u28C7</span><span>\u28FF</span>' +
-        '</div>' +
+        '<div class="braille-spinner" id="braille-spin">\u280B</div>' +
         '<div class="loading-text">Fetching account details\u2026</div>' +
         '</div>';
+    var _braille = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
+    var _bi = 0;
+    var _bint = setInterval(function() {
+        var el = document.getElementById('braille-spin');
+        if (!el) { clearInterval(_bint); return; }
+        _bi = (_bi + 1) % _braille.length;
+        el.textContent = _braille[_bi];
+    }, 80);
     drawer.classList.add('open');
     overlay.classList.add('open');
     // Track version to discard stale responses
