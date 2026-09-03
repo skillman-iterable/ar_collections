@@ -104,14 +104,21 @@ def _query_customer_details(conn=None):
     cols = [d[0] for d in cur.description]
     details = {}
     sfdc_ids = set()
+    acct_sfdc_ids = {}  # account_number -> set of all matching SFDC IDs
     for r in rows:
         d = dict(zip(cols, r))
         acct = d['ACCOUNT_NUMBER']
         if acct not in details:
             details[acct] = d
             details[acct]['contacts'] = []
-        if d.get('SFDC_ACCOUNT_ID'):
-            sfdc_ids.add(d['SFDC_ACCOUNT_ID'])
+            acct_sfdc_ids[acct] = set()
+        sid = d.get('SFDC_ACCOUNT_ID')
+        if sid:
+            sfdc_ids.add(sid)
+            acct_sfdc_ids[acct].add(sid)
+            # Keep first non-None SFDC ID for display
+            if not details[acct].get('SFDC_ACCOUNT_ID'):
+                details[acct]['SFDC_ACCOUNT_ID'] = sid
 
     # Fetch contacts for all matched SFDC accounts
     if sfdc_ids:
@@ -124,19 +131,23 @@ def _query_customer_details(conn=None):
             ORDER BY NAME
         """)
         contact_rows = cur.fetchall()
-        # Map contacts to account_numbers
+        # Map contacts to account_numbers (using ALL matching SFDC IDs per customer)
         sfdc_to_acct = {}
-        for acct, d in details.items():
-            sid = d.get('SFDC_ACCOUNT_ID')
-            if sid:
+        for acct, sids in acct_sfdc_ids.items():
+            for sid in sids:
                 sfdc_to_acct.setdefault(sid, []).append(acct)
         for cr in contact_rows:
             sid = cr[0]
             for acct in sfdc_to_acct.get(sid, []):
-                details[acct]['contacts'].append({
+                contact = {
                     'name': cr[1] or '', 'title': cr[2] or '',
                     'email': cr[3] or '', 'phone': cr[4] or ''
-                })
+                }
+                # Deduplicate by email (or name if no email)
+                key = contact['email'] or contact['name']
+                existing_keys = {(c['email'] or c['name']) for c in details[acct]['contacts']}
+                if key not in existing_keys:
+                    details[acct]['contacts'].append(contact)
 
     if own_conn: conn.close()
     return details
