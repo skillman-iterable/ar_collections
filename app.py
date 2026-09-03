@@ -43,6 +43,7 @@ def _query_snowflake(conn=None):
             t.DUEDATE::DATE  AS due_date,
             t.FOREIGNAMOUNTUNPAID AS invoice_balance,
             DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) AS days_past_due,
+            t.CUSTBODY_IT_INV_SENT_VIA_EMAIL AS invoice_sent,
             CASE
                 WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 31  AND 60  THEN '31-60'
                 WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 61  AND 90  THEN '61-90'
@@ -72,7 +73,10 @@ def _query_single_customer(acct_num, conn=None):
             c.ENTITYID AS account_number,
             c.COMPANYNAME AS customer_name,
             c.CUSTENTITY_ITR_ORG_ID AS org_id,
-            sa.sfdc_account_id,
+            c.SUBSIDIARY AS subsidiary_id,
+            cc.NAME AS category,
+            c.CUSTENTITY_PAYMENT_METHOD AS payment_method_id,
+            c.CUSTENTITY_ITER_CUSTOMER_BANK AS customer_bank_id,
             ba.ATTENTION AS bill_attention, ba.ADDRESSEE AS bill_addressee,
             ba.ADDR1 AS bill_addr1, ba.ADDR2 AS bill_addr2,
             ba.CITY AS bill_city, ba.STATE AS bill_state, ba.ZIP AS bill_zip, ba.COUNTRY AS bill_country,
@@ -84,12 +88,8 @@ def _query_single_customer(acct_num, conn=None):
             ON c.DEFAULTBILLINGADDRESS = ba.NKEY AND ba._FIVETRAN_DELETED = false
         LEFT JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMERADDRESSBOOKENTITYADDRESS sha
             ON c.DEFAULTSHIPPINGADDRESS = sha.NKEY AND sha._FIVETRAN_DELETED = false
-        LEFT JOIN (
-            SELECT ID AS sfdc_account_id, NAME
-            FROM FIVETRAN_DB.FT_SALESFORCE.ACCOUNT
-            WHERE IS_DELETED = false
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY TRIM(UPPER(NAME)) ORDER BY CREATED_DATE DESC) = 1
-        ) sa ON TRIM(UPPER(c.COMPANYNAME)) = TRIM(UPPER(sa.NAME))
+        LEFT JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMERCATEGORY cc
+            ON c.CATEGORY = cc.ID AND cc._FIVETRAN_DELETED = false
         WHERE c._FIVETRAN_DELETED = false
           AND c.ENTITYID = %s
     """, (acct_num,))
@@ -100,6 +100,48 @@ def _query_single_customer(acct_num, conn=None):
     cols = [d[0] for d in cur.description]
     detail = dict(zip(cols, rows[0]))
     detail['contacts'] = []
+    # Resolve NS reference IDs to names
+    _SUBSIDIARY_MAP = {1: 'Iterable, Inc.', 3: 'Iterable UK', 7: 'Iterable EU', 9: 'Iterable JP', 10: 'Iterable AU'}
+    _PAYMENT_METHOD_MAP = {2: 'Credit Card', 7: 'ACH/Wire', 8: 'Check', 9: 'Other'}
+    _BANK_MAP = {1: 'SVB', 2: 'HSBC', 3: 'JP Morgan'}
+    detail['SUBSIDIARY'] = _SUBSIDIARY_MAP.get(detail.get('SUBSIDIARY_ID'), str(detail.get('SUBSIDIARY_ID') or '—'))
+    detail['PAYMENT_METHOD'] = _PAYMENT_METHOD_MAP.get(detail.get('PAYMENT_METHOD_ID'), str(detail.get('PAYMENT_METHOD_ID') or '—'))
+    detail['CUSTOMER_BANK'] = _BANK_MAP.get(detail.get('CUSTOMER_BANK_ID'), str(detail.get('CUSTOMER_BANK_ID') or '—'))
+    # Fetch SFDC account info from analytics pre-built table
+    cust_name = detail.get('CUSTOMER_NAME', '')
+    cur.execute("""
+        SELECT ACCOUNT_ID AS sfdc_account_id,
+               OWNER_NAME AS account_owner,
+               CSM_C, CSM_MANAGER_C, AE_C,
+               AM_OWNER AS cam,
+               MARKET_SEGMENT_C AS market_segment
+        FROM ANALYTICS_PROD.BI_GTM.SRC_SF_ACCOUNT
+        WHERE IS_DELETED = false
+          AND UPPER(ACCOUNT_NAME) = UPPER(%s)
+        ORDER BY CREATED_DATE DESC
+        LIMIT 1
+    """, (cust_name,))
+    sfdc_rows = cur.fetchall()
+    if sfdc_rows:
+        sfdc_cols = [d[0] for d in cur.description]
+        sfdc = dict(zip(sfdc_cols, sfdc_rows[0]))
+        detail['SFDC_ACCOUNT_ID'] = sfdc.get('SFDC_ACCOUNT_ID')
+        detail['ACCOUNT_OWNER'] = sfdc.get('ACCOUNT_OWNER')
+        detail['CAM'] = sfdc.get('CAM')
+        detail['MARKET_SEGMENT'] = sfdc.get('MARKET_SEGMENT')
+        # Resolve CSM/CSM Manager/AE IDs to names
+        user_ids = set()
+        id_fields = {'CSM_C': 'CSM', 'CSM_MANAGER_C': 'CSM_MANAGER', 'AE_C': 'AE'}
+        for sf_col in id_fields:
+            uid = sfdc.get(sf_col)
+            if uid: user_ids.add(uid)
+        if user_ids:
+            id_list = ",".join([f"'{uid}'" for uid in user_ids])
+            cur.execute(f"SELECT DISTINCT ID, NAME FROM FIVETRAN_DB.FT_SALESFORCE.USER WHERE ID IN ({id_list})")
+            user_map = {r[0]: r[1] for r in cur.fetchall()}
+            for sf_col, detail_key in id_fields.items():
+                uid = sfdc.get(sf_col)
+                detail[detail_key] = user_map.get(uid, '') if uid else ''
     sfdc_id = detail.get('SFDC_ACCOUNT_ID')
     # Fetch contacts for matched SFDC account
     if sfdc_id:
@@ -251,6 +293,44 @@ body {
 }
 .export-menu a:hover { background: var(--surface2); }
 .export-menu a .exp-icon { font-size: 16px; width: 20px; text-align: center; }
+
+/* Export toast */
+.export-toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 20px; font-size: 13px; color: var(--text); z-index: 9999;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3); opacity: 0; transition: all 0.3s;
+}
+.export-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.export-toast a { color: var(--accent); text-decoration: underline; }
+
+/* Enrichment grids */
+.enrich-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 0;
+}
+.enrich-item .ei-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 2px;
+}
+.enrich-item .ei-value { font-size: 13px; color: var(--text); font-weight: 500; }
+.sent-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    background: rgba(61,214,140,0.15); color: var(--green);
+}
+.resolution-select, .promise-toggle {
+    padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); font-size: 12px; font-family: inherit;
+    cursor: pointer;
+}
+.resolution-select:focus, .promise-toggle:focus { border-color: var(--accent); outline: none; }
+.promise-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    background: rgba(108,140,255,0.15); color: var(--accent);
+}
+.resolution-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;
+    background: rgba(245,197,66,0.15); color: var(--yellow);
+}
 
 .badge {
     display: inline-block; padding: 3px 10px; border-radius: 20px;
@@ -851,27 +931,48 @@ document.addEventListener('click', function() {
     if (m) m.classList.remove('open');
 });
 function exportGSheets() {
-    // Build CSV from visible rows, then open Google Sheets import
-    var rows = getVisibleRows();
-    var csv = 'Account #,Customer,Invoice #,Inv Date,Inv Amount,Due Date,Balance,Days Past Due,Bucket\\n';
+    // Download CSV from server (includes all data, not just visible)
+    // then show toast with instructions
+    window.location.href = '/export/csv';
+    var toast = document.createElement('div');
+    toast.className = 'export-toast';
+    toast.innerHTML = 'CSV downloaded \u2014 open <a href="https://sheets.google.com/create" target="_blank">Google Sheets</a> and use <b>File \u2192 Import</b>';
+    document.body.appendChild(toast);
+    setTimeout(function() { toast.classList.add('show'); }, 10);
+    setTimeout(function() { toast.classList.remove('show'); setTimeout(function() { toast.remove(); }, 300); }, 6000);
+}
+
+function saveResolution(acctNum, value) {
+    fetch('/save-resolution/' + encodeURIComponent(acctNum), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'value=' + encodeURIComponent(value)
+    });
+}
+
+function savePromise(invoiceNum, checked) {
+    fetch('/save-promise/' + encodeURIComponent(invoiceNum), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'value=' + (checked ? '1' : '0')
+    });
+    // Toggle badge in table row
+    var rows = document.querySelectorAll('#ar-table tbody tr');
     rows.forEach(function(r) {
         var cells = r.querySelectorAll('td');
-        var line = [];
-        for (var i = 0; i < 9; i++) {
-            var val = (i === 4 || i === 6) ? (cells[i].getAttribute('data-val') || '0') : cells[i].textContent.trim();
-            if (val.indexOf(',') >= 0 || val.indexOf('"') >= 0) val = '"' + val.replace(/"/g, '""') + '"';
-            line.push(val);
+        if (cells.length > 2 && cells[2].textContent.trim() === invoiceNum) {
+            var existing = cells[9].querySelector('.promise-badge');
+            if (checked && !existing) {
+                var b = document.createElement('span');
+                b.className = 'promise-badge';
+                b.textContent = 'PTP';
+                b.style.marginLeft = '4px';
+                cells[9].appendChild(b);
+            } else if (!checked && existing) {
+                existing.remove();
+            }
         }
-        csv += line.join(',') + '\\n';
     });
-    var blob = new Blob([csv], {type: 'text/csv'});
-    var url = URL.createObjectURL(blob);
-    // Download CSV first, then open Google Sheets
-    var a = document.createElement('a');
-    a.href = url; a.download = 'ar_aging_export.csv'; a.click();
-    setTimeout(function() {
-        window.open('https://sheets.google.com/create', '_blank');
-    }, 500);
 }
 
 // Easter egg modal
@@ -1341,11 +1442,90 @@ def get_customer_detail(acct_num: str):
         )
     )
 
+    # SFDC Account Info section
+    def _ei(label, val):
+        return Div(Div(label, cls="ei-label"), Div(str(val) if val else "—", cls="ei-value"), cls="enrich-item")
+
+    sfdc_section = Div(
+        Div(
+            Div(Span("SFDC Account Info"), cls="accordion-header", onclick="toggleAccordion(this)"),
+            Div(Div(
+                _ei("Account Owner", d.get('ACCOUNT_OWNER')),
+                _ei("CSM", d.get('CSM')),
+                _ei("CSM Manager", d.get('CSM_MANAGER')),
+                _ei("AE", d.get('AE')),
+                _ei("CAM", d.get('CAM')),
+                _ei("Market Segment", d.get('MARKET_SEGMENT')),
+                cls="enrich-grid"
+            ), cls="accordion-body"),
+            cls="accordion-item"
+        )
+    )
+
+    # NetSuite Details section
+    ns_section = Div(
+        Div(
+            Div(Span("NetSuite Details"), cls="accordion-header", onclick="toggleAccordion(this)"),
+            Div(Div(
+                _ei("Subsidiary", d.get('SUBSIDIARY')),
+                _ei("Category", d.get('CATEGORY')),
+                _ei("Payment Method", d.get('PAYMENT_METHOD')),
+                _ei("Customer Bank", d.get('CUSTOMER_BANK')),
+                cls="enrich-grid"
+            ), cls="accordion-body"),
+            cls="accordion-item"
+        )
+    )
+
+    # Resolution Category and Promise to Pay section
+    resolution_cats = ["", "Legal", "Access Suspended", "Amendment", "Backdated Uplift Nego.", "Resolved", "Other"]
+    acct_res = _NOTES.get(f"res_{acct_num}", {})
+    current_res = acct_res.get('resolution_category', '')
+    res_options = [Option(c if c else "— Select —", value=c, selected=(c == current_res)) for c in resolution_cats]
+
+    ptp_rows = []
+    for inv in cust_invoices:
+        inv_num = inv['INVOICE_NUMBER']
+        is_ptp = _NOTES.get(f"ptp_{inv_num}", False)
+        ptp_rows.append(Div(
+            Input(type="checkbox", checked=is_ptp,
+                  onchange=f"savePromise('{_esc(inv_num)}', this.checked)",
+                  style="margin-right:6px;"),
+            Span(f"{inv_num}", style="font-size:12px;color:var(--text);margin-right:8px;"),
+            Span(fm(inv['INVOICE_BALANCE']), style="font-size:12px;color:var(--text-muted);"),
+            Span(" Sent", cls="sent-badge", style="margin-left:6px;") if inv.get('INVOICE_SENT') == 'T' else "",
+            style="display:flex;align-items:center;padding:4px 0;"
+        ))
+
+    res_section = Div(
+        Div(
+            Div(Span("Resolution & Status"), cls="accordion-header", onclick="toggleAccordion(this)"),
+            Div(Div(
+                Div(
+                    Div("Resolution Category", cls="ei-label"),
+                    Select(*res_options, cls="resolution-select",
+                           onchange=f"saveResolution('{_esc(acct_num)}', this.value)"),
+                    cls="enrich-item", style="grid-column: span 2;"
+                ),
+                Div(
+                    Div("Promise to Pay", cls="ei-label", style="margin-bottom:6px;"),
+                    *ptp_rows if ptp_rows else [Div("No invoices", cls="no-data", style="font-size:12px;")],
+                    cls="enrich-item", style="grid-column: span 2;"
+                ),
+                cls="enrich-grid"
+            ), cls="accordion-body"),
+            cls="accordion-item"
+        )
+    )
+
     return Div(
         summary,
         Div(*meta_items, cls="drawer-meta"),
+        sfdc_section,
+        ns_section,
         addr_section,
         contact_section,
+        res_section,
     )
 
 
@@ -1492,6 +1672,7 @@ def get():
                         th_sort("Balance", 6, right=True),
                         th_sort("Days", 7, right=True),
                         th_sort("Bucket", 8),
+                        Th("Status", style="text-align:center;cursor:default;"),
                         Th("Notes", style="text-align:center;cursor:default;"),
                     )),
                     Tbody(*[
@@ -1506,6 +1687,12 @@ def get():
                             Td(fm(r['INVOICE_BALANCE']), cls="r", data_val=str(r['INVOICE_BALANCE'])),
                             Td(str(r['DAYS_PAST_DUE']), cls="r", data_val=str(r['DAYS_PAST_DUE'])),
                             Td(badge(r['AGING_BUCKET'])),
+                            Td(
+                                Span("Sent", cls="sent-badge") if r.get('INVOICE_SENT') == 'T' else "",
+                                Span("PTP", cls="promise-badge") if _NOTES.get(f"ptp_{r['INVOICE_NUMBER']}") else "",
+                                Span(_NOTES.get(f"res_{str(r['ACCOUNT_NUMBER'])}", {}).get('resolution_category', ''), cls="resolution-badge") if _NOTES.get(f"res_{str(r['ACCOUNT_NUMBER'])}") else "",
+                                style="text-align:center;"
+                            ),
                             Td(
                                 Span(
                                     NotStr("&#128221;") if _NOTES.get(r['INVOICE_NUMBER']) else NotStr("&#128203;"),
@@ -1525,7 +1712,7 @@ def get():
                         Td(fm(total_inv_amount), cls="r tf-amt"),
                         Td(""),
                         Td(fm(grand_total), cls="r tf-bal"),
-                        Td(""), Td(""), Td(""),
+                        Td(""), Td(""), Td(""), Td(""),
                         id="tfoot-total"
                     )),
                     id="ar-table"
@@ -1648,6 +1835,34 @@ def get():
     )
 
 
+@rt("/save-resolution/{acct_num}", methods=["POST"])
+async def save_resolution(acct_num: str, request):
+    form = await request.form()
+    value = form.get('value', '')
+    key = f"res_{acct_num}"
+    if value:
+        _NOTES[key] = {'resolution_category': value}
+    else:
+        _NOTES.pop(key, None)
+    with open(_NOTES_PATH, 'w') as f:
+        json.dump(_NOTES, f, indent=2, default=str)
+    return Response(content="ok")
+
+
+@rt("/save-promise/{invoice_num}", methods=["POST"])
+async def save_promise(invoice_num: str, request):
+    form = await request.form()
+    value = form.get('value', '0')
+    key = f"ptp_{invoice_num}"
+    if value == '1':
+        _NOTES[key] = True
+    else:
+        _NOTES.pop(key, None)
+    with open(_NOTES_PATH, 'w') as f:
+        json.dump(_NOTES, f, indent=2, default=str)
+    return Response(content="ok")
+
+
 @rt("/refresh")
 def refresh_data():
     global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
@@ -1659,19 +1874,43 @@ def refresh_data():
 @rt("/export/{fmt}")
 def export_data(fmt: str):
     data = _CACHED_DATA or []
-    headers = ["Account #", "Customer", "Invoice #", "Inv Date", "Inv Amount", "Due Date", "Balance", "Days Past Due", "Bucket"]
+    headers = ["Account #", "Customer", "Invoice #", "Inv Date", "Inv Amount", "Due Date",
+               "Balance", "Days Past Due", "Bucket", "Invoice Sent", "Promise to Pay",
+               "Resolution Category", "Account Owner", "CSM", "CSM Manager", "AE", "CAM",
+               "Market Segment", "Subsidiary", "Category", "Payment Method", "Customer Bank"]
     rows = []
+    # Build account-level enrichment cache for export
+    acct_detail_cache = {}
     for r in data:
+        acct = str(r.get('ACCOUNT_NUMBER', ''))
+        if acct not in acct_detail_cache:
+            d = _CUSTOMER_DETAIL_CACHE.get(acct, {})
+            acct_detail_cache[acct] = d
+        d = acct_detail_cache[acct]
+        inv_num = str(r.get('INVOICE_NUMBER', ''))
         rows.append([
-            str(r.get('ACCOUNT_NUMBER', '')),
+            acct,
             str(r.get('CUSTOMER_NAME', '')),
-            str(r.get('INVOICE_NUMBER', '')),
+            inv_num,
             str(r.get('INVOICE_DATE', '')),
             r.get('INVOICE_AMOUNT', 0),
             str(r.get('DUE_DATE', '')),
             r.get('INVOICE_BALANCE', 0),
             r.get('DAYS_PAST_DUE', 0),
             str(r.get('AGING_BUCKET', '')),
+            'Yes' if r.get('INVOICE_SENT') == 'T' else 'No',
+            'Yes' if _NOTES.get(f"ptp_{inv_num}") else 'No',
+            _NOTES.get(f"res_{acct}", {}).get('resolution_category', ''),
+            str(d.get('ACCOUNT_OWNER') or ''),
+            str(d.get('CSM') or ''),
+            str(d.get('CSM_MANAGER') or ''),
+            str(d.get('AE') or ''),
+            str(d.get('CAM') or ''),
+            str(d.get('MARKET_SEGMENT') or ''),
+            str(d.get('SUBSIDIARY') or ''),
+            str(d.get('CATEGORY') or ''),
+            str(d.get('PAYMENT_METHOD') or ''),
+            str(d.get('CUSTOMER_BANK') or ''),
         ])
 
     if fmt == 'csv':
