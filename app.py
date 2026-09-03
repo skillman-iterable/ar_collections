@@ -426,6 +426,66 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 .contact-email a:hover { text-decoration: underline; }
 .contact-phone { color: var(--text-muted); white-space: nowrap; }
 .no-data { color: var(--text-muted); font-size: 13px; font-style: italic; padding: 8px 0; }
+
+/* Easter egg modal */
+.help-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text-muted); font-size: 14px; font-weight: 700;
+    cursor: pointer; margin-left: 12px; transition: all 0.2s; vertical-align: middle;
+}
+.help-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(108,140,255,0.1); }
+
+.ee-overlay {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.7); z-index: 2000; justify-content: center; align-items: flex-start;
+    overflow-y: auto; padding: 40px 20px;
+}
+.ee-overlay.open { display: flex; }
+.ee-modal {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    width: 900px; max-width: 95vw; padding: 0; position: relative;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+}
+.ee-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 28px; border-bottom: 1px solid var(--border);
+}
+.ee-header h2 { font-size: 18px; font-weight: 600; color: var(--text); }
+.ee-close {
+    background: none; border: none; color: var(--text-muted); font-size: 22px;
+    cursor: pointer; padding: 4px 8px; line-height: 1;
+}
+.ee-close:hover { color: var(--text); }
+.ee-tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+}
+.ee-tab {
+    padding: 12px 24px; font-size: 13px; font-weight: 500; color: var(--text-muted);
+    cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+    background: none; border-top: none; border-left: none; border-right: none;
+}
+.ee-tab:hover { color: var(--text); background: var(--surface2); }
+.ee-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ee-content { padding: 24px 28px; }
+.ee-panel { display: none; }
+.ee-panel.active { display: block; }
+.ee-diagram-wrap {
+    background: #f5f5f5; border-radius: 10px; padding: 16px; margin-bottom: 20px;
+    overflow-x: auto;
+}
+.ee-diagram-wrap svg { width: 100%; height: auto; display: block; }
+.ee-walkthrough h3 { font-size: 15px; font-weight: 600; color: var(--accent); margin: 20px 0 8px 0; }
+.ee-walkthrough h3:first-child { margin-top: 0; }
+.ee-walkthrough p { font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 12px; }
+.ee-walkthrough ul { padding-left: 20px; margin-bottom: 12px; }
+.ee-walkthrough li { font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 4px; }
+.ee-walkthrough .ee-highlight { color: var(--accent); font-weight: 600; }
+.ee-walkthrough .ee-muted { color: var(--text-muted); font-style: italic; }
+.ee-walkthrough code {
+    background: var(--surface2); padding: 2px 6px; border-radius: 4px;
+    font-size: 12px; color: var(--yellow);
+}
 """
 
 # ---------------------------------------------------------------------------
@@ -655,10 +715,275 @@ function toggleAccordion(el) {
     item.classList.toggle('open');
 }
 
+// Easter egg modal
+function openHelp() {
+    document.getElementById('ee-overlay').classList.add('open');
+    switchEETab('integration');
+}
+function closeHelp() {
+    document.getElementById('ee-overlay').classList.remove('open');
+}
+function switchEETab(tab) {
+    document.querySelectorAll('.ee-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.ee-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.querySelector('.ee-tab[data-tab="' + tab + '"]').classList.add('active');
+    document.getElementById('ee-' + tab).classList.add('active');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     updateTotals();
 });
 """
+
+# ---------------------------------------------------------------------------
+# SVG Diagrams (diagram-design style)
+# ---------------------------------------------------------------------------
+def _dp_integration_svg():
+    return '''<svg viewBox="0 0 840 420" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Data Platform Integration</title>
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker>
+    <marker id="arr-a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker>
+    <marker id="arr-l" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e5aa8"/></marker>
+  </defs>
+  <rect width="840" height="420" fill="#f5f5f5" rx="8"/>
+  <!-- Title -->
+  <text x="420" y="32" text-anchor="middle" font-family="Georgia,serif" font-size="16" fill="#2d3142" font-weight="400">Data Platform Integration</text>
+  <text x="420" y="48" text-anchor="middle" font-family="monospace" font-size="8" fill="#4f5d75" letter-spacing="1">DP INTEGRATION · AR COLLECTIONS</text>
+
+  <!-- Sources column -->
+  <text x="80" y="76" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#4f5d75" font-weight="600" letter-spacing="1">SOURCES</text>
+  <!-- NetSuite -->
+  <rect x="16" y="92" width="128" height="56" rx="6" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="80" y="114" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">NetSuite</text>
+  <text x="80" y="128" text-anchor="middle" font-family="monospace" font-size="8" fill="#4f5d75">ERP · invoices</text>
+  <text x="80" y="140" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">customers · addresses</text>
+  <!-- Salesforce -->
+  <rect x="16" y="164" width="128" height="56" rx="6" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="80" y="186" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">Salesforce</text>
+  <text x="80" y="200" text-anchor="middle" font-family="monospace" font-size="8" fill="#4f5d75">CRM · accounts</text>
+  <text x="80" y="212" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">contacts</text>
+
+  <!-- Platform zone -->
+  <rect x="196" y="68" width="448" height="280" rx="8" fill="none" stroke="#2e3348" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="420" y="86" text-anchor="middle" font-family="monospace" font-size="8" fill="#4f5d75" font-weight="600" letter-spacing="2">DATA PLATFORM</text>
+
+  <!-- Fivetran -->
+  <rect x="220" y="108" width="128" height="56" rx="6" fill="#fff" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="284" y="130" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">Fivetran</text>
+  <text x="284" y="144" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36">sync · CDC</text>
+  <text x="284" y="156" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">automated replication</text>
+
+  <!-- Snowflake -->
+  <rect x="220" y="184" width="128" height="56" rx="6" fill="#fff" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="284" y="206" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">Snowflake</text>
+  <text x="284" y="220" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36">FIVETRAN_DB</text>
+  <text x="284" y="232" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">warehouse: BILLING_PIPE</text>
+
+  <!-- Snowflake detail boxes -->
+  <rect x="380" y="100" width="120" height="44" rx="4" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="440" y="118" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#2d3142" font-weight="600">NETSUITE_SUITE</text>
+  <text x="440" y="132" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">TRANSACTION · CUSTOMER</text>
+
+  <rect x="380" y="156" width="120" height="44" rx="4" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="440" y="174" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#2d3142" font-weight="600">FT_SALESFORCE</text>
+  <text x="440" y="188" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">ACCOUNT · CONTACT</text>
+
+  <!-- Query box -->
+  <rect x="380" y="216" width="120" height="44" rx="4" fill="#fff" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="440" y="234" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#2d3142" font-weight="600">SQL Query</text>
+  <text x="440" y="248" text-anchor="middle" font-family="monospace" font-size="7" fill="#eb6c36">JOIN · AGGREGATE</text>
+
+  <!-- GitHub Actions -->
+  <rect x="540" y="100" width="88" height="44" rx="4" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="584" y="118" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#2d3142" font-weight="600">GitHub</text>
+  <text x="584" y="132" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">Actions CI/CD</text>
+
+  <!-- Docker -->
+  <rect x="540" y="156" width="88" height="44" rx="4" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="584" y="174" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#2d3142" font-weight="600">Artifact</text>
+  <text x="584" y="188" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">Registry · Docker</text>
+
+  <!-- Consumer column -->
+  <text x="760" y="76" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#4f5d75" font-weight="600" letter-spacing="1">CONSUMER</text>
+  <!-- Cloud Run -->
+  <rect x="696" y="92" width="128" height="56" rx="6" fill="#fff" stroke="#2e5aa8" stroke-width="1.5"/>
+  <text x="760" y="114" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">Cloud Run</text>
+  <text x="760" y="128" text-anchor="middle" font-family="monospace" font-size="8" fill="#2e5aa8">GCP · us-central1</text>
+  <text x="760" y="140" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">ar-collections</text>
+  <!-- FastHTML App -->
+  <rect x="696" y="164" width="128" height="56" rx="6" fill="#fff" stroke="#2e5aa8" stroke-width="1.5"/>
+  <text x="760" y="186" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">FastHTML App</text>
+  <text x="760" y="200" text-anchor="middle" font-family="monospace" font-size="8" fill="#2e5aa8">Python · port 8080</text>
+  <text x="760" y="212" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">this report</text>
+  <!-- Browser -->
+  <rect x="696" y="236" width="128" height="44" rx="6" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="760" y="256" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#2d3142" font-weight="600">Browser</text>
+  <text x="760" y="268" text-anchor="middle" font-family="monospace" font-size="8" fill="#4f5d75">collections team</text>
+
+  <!-- Arrows: Sources -> Fivetran -->
+  <line x1="144" y1="120" x2="216" y2="128" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arr)"/>
+  <rect x="158" y="116" width="28" height="12" fill="#f5f5f5"/><text x="172" y="125" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">API</text>
+  <line x1="144" y1="192" x2="216" y2="144" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arr)"/>
+  <rect x="158" y="158" width="32" height="12" fill="#f5f5f5"/><text x="174" y="167" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">REST</text>
+
+  <!-- Fivetran -> Snowflake -->
+  <line x1="284" y1="164" x2="284" y2="180" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arr-a)"/>
+  <rect x="262" y="168" width="44" height="10" fill="#f5f5f5"/><text x="284" y="176" text-anchor="middle" font-family="monospace" font-size="7" fill="#eb6c36">SYNC</text>
+
+  <!-- Snowflake -> Schema boxes -->
+  <line x1="348" y1="200" x2="376" y2="122" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="348" y1="212" x2="376" y2="178" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- Schema boxes -> Query -->
+  <line x1="440" y1="144" x2="440" y2="212" stroke="#eb6c36" stroke-width="1" marker-end="url(#arr-a)"/>
+
+  <!-- Query -> App (via platform boundary) -->
+  <line x1="500" y1="238" x2="692" y2="192" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arr-l)"/>
+  <rect x="576" y="206" width="36" height="10" fill="#f5f5f5"/><text x="594" y="214" text-anchor="middle" font-family="monospace" font-size="7" fill="#2e5aa8">SQL</text>
+
+  <!-- GitHub -> Registry -->
+  <line x1="584" y1="144" x2="584" y2="152" stroke="#4f5d75" stroke-width="1" marker-end="url(#arr)"/>
+  <!-- Registry -> Cloud Run -->
+  <line x1="628" y1="178" x2="692" y2="120" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arr)"/>
+  <rect x="640" y="140" width="40" height="10" fill="#f5f5f5"/><text x="660" y="148" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">DEPLOY</text>
+
+  <!-- Cloud Run -> App -->
+  <line x1="760" y1="148" x2="760" y2="160" stroke="#2e5aa8" stroke-width="1" marker-end="url(#arr-l)"/>
+  <!-- App -> Browser -->
+  <line x1="760" y1="220" x2="760" y2="232" stroke="#2e5aa8" stroke-width="1" marker-end="url(#arr-l)"/>
+  <rect x="740" y="222" width="40" height="10" fill="#f5f5f5"/><text x="760" y="230" text-anchor="middle" font-family="monospace" font-size="7" fill="#2e5aa8">HTTPS</text>
+
+  <!-- Auth bar -->
+  <rect x="196" y="360" width="448" height="28" rx="4" fill="#fff" stroke="#eb6c36" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="420" y="378" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#eb6c36" font-weight="500">OAuth / RSA Key-Pair Authentication</text>
+
+  <!-- Legend -->
+  <line x1="40" y1="404" x2="64" y2="404" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arr)"/>
+  <text x="68" y="407" font-family="monospace" font-size="7" fill="#4f5d75">Standard</text>
+  <line x1="140" y1="404" x2="164" y2="404" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arr-a)"/>
+  <text x="168" y="407" font-family="monospace" font-size="7" fill="#eb6c36">Focal / platform</text>
+  <line x1="280" y1="404" x2="304" y2="404" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arr-l)"/>
+  <text x="308" y="407" font-family="monospace" font-size="7" fill="#2e5aa8">Consumer / API</text>
+  <rect x="420" y="398" width="10" height="10" rx="2" fill="none" stroke="#2e3348" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="434" y="407" font-family="monospace" font-size="7" fill="#4f5d75">Platform boundary</text>
+</svg>'''
+
+
+def _data_flow_svg():
+    return '''<svg viewBox="0 0 840 380" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Data Flow - AR Aging Pipeline</title>
+  <defs>
+    <marker id="df-arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker>
+    <marker id="df-arr-a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#eb6c36"/></marker>
+    <marker id="df-arr-l" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2e5aa8"/></marker>
+  </defs>
+  <rect width="840" height="380" fill="#f5f5f5" rx="8"/>
+  <!-- Title -->
+  <text x="420" y="28" text-anchor="middle" font-family="Georgia,serif" font-size="16" fill="#2d3142">Data Flow</text>
+  <text x="420" y="44" text-anchor="middle" font-family="monospace" font-size="8" fill="#4f5d75" letter-spacing="1">AR AGING PIPELINE · STEP BY STEP</text>
+
+  <!-- Step labels -->
+  <text x="80" y="72" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36" font-weight="600">01 INGEST</text>
+  <text x="244" y="72" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36" font-weight="600">02 STORE</text>
+  <text x="420" y="72" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36" font-weight="600">03 JOIN</text>
+  <text x="596" y="72" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36" font-weight="600">04 COMPUTE</text>
+  <text x="760" y="72" text-anchor="middle" font-family="monospace" font-size="8" fill="#eb6c36" font-weight="600">05 SERVE</text>
+
+  <!-- Row 1: Invoice path -->
+  <rect x="16" y="88" width="128" height="52" rx="5" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="80" y="108" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">NetSuite Invoice</text>
+  <text x="80" y="122" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">TRANSACTION (CustInvc)</text>
+  <text x="80" y="132" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">FOREIGNAMOUNTUNPAID</text>
+
+  <line x1="144" y1="114" x2="180" y2="114" stroke="#4f5d75" stroke-width="1" marker-end="url(#df-arr)"/>
+
+  <rect x="180" y="88" width="128" height="52" rx="5" fill="#fff" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="244" y="108" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">NETSUITE_SUITE</text>
+  <text x="244" y="122" text-anchor="middle" font-family="monospace" font-size="7" fill="#eb6c36">TRANSACTION table</text>
+  <text x="244" y="132" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">balance · dates · entity</text>
+
+  <!-- Row 2: Customer path -->
+  <rect x="180" y="156" width="128" height="52" rx="5" fill="#fff" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="244" y="176" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">CUSTOMER</text>
+  <text x="244" y="190" text-anchor="middle" font-family="monospace" font-size="7" fill="#eb6c36">ENTITYID · COMPANYNAME</text>
+  <text x="244" y="200" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">org_id · addresses</text>
+
+  <!-- Row 3: SFDC Account path -->
+  <rect x="16" y="224" width="128" height="52" rx="5" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="80" y="244" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">Salesforce</text>
+  <text x="80" y="258" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">ACCOUNT · CONTACT</text>
+  <text x="80" y="268" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">via Fivetran sync</text>
+
+  <line x1="144" y1="250" x2="180" y2="250" stroke="#4f5d75" stroke-width="1" marker-end="url(#df-arr)"/>
+
+  <rect x="180" y="224" width="128" height="52" rx="5" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="244" y="244" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">FT_SALESFORCE</text>
+  <text x="244" y="258" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">ACCOUNT table</text>
+  <text x="244" y="268" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">ID · NAME · IS_DELETED</text>
+
+  <!-- JOIN step - focal -->
+  <rect x="356" y="88" width="128" height="68" rx="5" fill="#fff" stroke="#eb6c36" stroke-width="2"/>
+  <text x="420" y="108" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#eb6c36" font-weight="700">JOIN</text>
+  <text x="420" y="122" text-anchor="middle" font-family="monospace" font-size="7" fill="#2d3142">t.ENTITY = c.ID</text>
+  <text x="420" y="134" text-anchor="middle" font-family="monospace" font-size="7" fill="#2d3142">UPPER(NAME) match</text>
+  <text x="420" y="148" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">+ address + contact</text>
+
+  <!-- Arrows into JOIN -->
+  <line x1="308" y1="114" x2="352" y2="114" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#df-arr-a)"/>
+  <line x1="308" y1="182" x2="352" y2="136" stroke="#eb6c36" stroke-width="1" marker-end="url(#df-arr-a)"/>
+  <line x1="308" y1="250" x2="352" y2="148" stroke="#4f5d75" stroke-width="1" marker-end="url(#df-arr)"/>
+
+  <!-- SFDC Contact box -->
+  <rect x="356" y="224" width="128" height="44" rx="5" fill="#fff" stroke="#2e3348" stroke-width="1"/>
+  <text x="420" y="244" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">CONTACT</text>
+  <text x="420" y="258" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">name · title · email</text>
+  <line x1="420" y1="220" x2="420" y2="156" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#df-arr)"/>
+  <rect x="398" y="192" width="44" height="10" fill="#f5f5f5"/><text x="420" y="200" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">ACCT_ID</text>
+
+  <!-- COMPUTE step -->
+  <rect x="532" y="88" width="128" height="68" rx="5" fill="#fff" stroke="#eb6c36" stroke-width="1.5"/>
+  <text x="596" y="108" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">Aging Buckets</text>
+  <text x="596" y="122" text-anchor="middle" font-family="monospace" font-size="7" fill="#eb6c36">DATEDIFF(due, today)</text>
+  <text x="596" y="134" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">31-60 | 61-90</text>
+  <text x="596" y="146" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">91-120 | 120+</text>
+
+  <line x1="484" y1="122" x2="528" y2="122" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#df-arr-a)"/>
+
+  <!-- SERVE step -->
+  <rect x="696" y="88" width="128" height="68" rx="5" fill="#fff" stroke="#2e5aa8" stroke-width="1.5"/>
+  <text x="760" y="108" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#2d3142" font-weight="600">FastHTML</text>
+  <text x="760" y="122" text-anchor="middle" font-family="monospace" font-size="8" fill="#2e5aa8">AR Aging Report</text>
+  <text x="760" y="134" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">table + drawer + charts</text>
+  <text x="760" y="146" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">notes · sort · filter</text>
+
+  <line x1="660" y1="122" x2="692" y2="122" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#df-arr-l)"/>
+
+  <!-- Key filter callout -->
+  <rect x="532" y="184" width="128" height="36" rx="4" fill="#fff" stroke="#eb6c36" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="596" y="200" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#eb6c36" font-weight="500">UNPAID > $0</text>
+  <text x="596" y="212" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">past due 31+ days</text>
+  <line x1="596" y1="156" x2="596" y2="180" stroke="#eb6c36" stroke-width="1" stroke-dasharray="4,2"/>
+
+  <!-- Payment removal callout -->
+  <rect x="696" y="184" width="128" height="48" rx="4" fill="#fff" stroke="#3dd68c" stroke-width="1.5"/>
+  <text x="760" y="200" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#3dd68c" font-weight="600">Payment Posted</text>
+  <text x="760" y="214" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">UNPAID drops to $0</text>
+  <text x="760" y="224" text-anchor="middle" font-family="monospace" font-size="7" fill="#4f5d75">invoice falls off report</text>
+
+  <!-- Legend -->
+  <line x1="40" y1="352" x2="64" y2="352" stroke="#4f5d75" stroke-width="1" marker-end="url(#df-arr)"/>
+  <text x="68" y="355" font-family="monospace" font-size="7" fill="#4f5d75">Data flow</text>
+  <line x1="160" y1="352" x2="184" y2="352" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#df-arr-a)"/>
+  <text x="188" y="355" font-family="monospace" font-size="7" fill="#eb6c36">Focal / join</text>
+  <line x1="280" y1="352" x2="304" y2="352" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#df-arr-l)"/>
+  <text x="308" y="355" font-family="monospace" font-size="7" fill="#2e5aa8">Output</text>
+  <rect x="380" y="346" width="10" height="10" rx="2" fill="none" stroke="#3dd68c" stroke-width="1.5"/>
+  <text x="394" y="355" font-family="monospace" font-size="7" fill="#3dd68c">Paid = removed</text>
+  <line x1="500" y1="352" x2="524" y2="352" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="528" y="355" font-family="monospace" font-size="7" fill="#4f5d75">Lookup / filter</text>
+</svg>'''
+
 
 # ---------------------------------------------------------------------------
 # App
@@ -869,6 +1194,7 @@ def get():
                 Span(f"{grand_count} invoices", cls="header-count", id="header-count"),
                 Span(fm(grand_total), cls="header-total", id="header-total"),
                 A("Refresh", href="/refresh", cls="refresh-btn"),
+                Button("?", cls="help-btn", onclick="openHelp()", title="About this report"),
                 cls="header-right"
             ),
             cls="app-header"
@@ -1026,6 +1352,84 @@ def get():
         ),
         # Inject notes data
         Script(f"initNotes({json.dumps(_NOTES)});"),
+        # Easter egg modal
+        Div(
+            Div(
+                Div(
+                    H2("About This Report"),
+                    Button(NotStr("&times;"), cls="ee-close", onclick="closeHelp()"),
+                    cls="ee-header"
+                ),
+                Div(
+                    Button("Data Platform Integration", cls="ee-tab active", data_tab="integration", onclick="switchEETab('integration')"),
+                    Button("Data Flow", cls="ee-tab", data_tab="dataflow", onclick="switchEETab('dataflow')"),
+                    Button("How to Use", cls="ee-tab", data_tab="guide", onclick="switchEETab('guide')"),
+                    cls="ee-tabs"
+                ),
+                Div(
+                    # Tab 1: DP Integration diagram
+                    Div(
+                        Div(NotStr(_dp_integration_svg()), cls="ee-diagram-wrap"),
+                        Div(
+                            P("This diagram shows how data flows from source systems through the integration layer into this report."),
+                            cls="ee-walkthrough"
+                        ),
+                        id="ee-integration", cls="ee-panel active"
+                    ),
+                    # Tab 2: Data Flow diagram
+                    Div(
+                        Div(NotStr(_data_flow_svg()), cls="ee-diagram-wrap"),
+                        Div(
+                            P("This diagram shows the specific data objects and joins used to assemble the AR aging view."),
+                            cls="ee-walkthrough"
+                        ),
+                        id="ee-dataflow", cls="ee-panel"
+                    ),
+                    # Tab 3: Guide
+                    Div(
+                        Div(
+                            H3("What This Report Is"),
+                            Ul(
+                                Li("A ", Span("live AR aging report", cls="ee-highlight"), " showing all invoices 31+ days past due, sourced directly from NetSuite via Snowflake."),
+                                Li("Invoices are grouped into aging buckets: 31-60, 61-90, 91-120, and 120+ days past the due date."),
+                                Li("Each customer row links to a detail drawer with Iterable Org ID, Salesforce Account ID, bill-to/ship-to addresses, and SFDC contacts."),
+                                Li("Collection notes can be added per invoice and persist in-session."),
+                            ),
+                            H3("What This Report Is NOT"),
+                            Ul(
+                                Li("This is ", Span("not a static snapshot", cls="ee-highlight"), ". Data refreshes each time you load the page or click Refresh."),
+                                Li("This does ", Span("not", cls="ee-highlight"), " include invoices that are current (0-30 days) or not yet due."),
+                                Li("This does ", Span("not", cls="ee-highlight"), " modify NetSuite data. Notes are local to this app and do not sync back."),
+                                Li("SFDC contacts are matched by company name, not a direct CRM ID link. Some customers may show fewer contacts if the name match is imprecise."),
+                            ),
+                            H3("When Invoices Disappear"),
+                            P("When a customer pays an invoice in NetSuite, the ", Code("FOREIGNAMOUNTUNPAID"), " field drops to $0. On the next page load, that invoice will ", Span("automatically fall off this report", cls="ee-highlight"), ". No manual action needed."),
+                            P(Span("The report is only as current as the Fivetran sync.", cls="ee-muted"), " NetSuite data syncs to Snowflake via Fivetran on a regular schedule. There may be a short delay between a payment posting in NetSuite and it reflecting here."),
+                            H3("How to Use"),
+                            Ul(
+                                Li(Span("Click a bucket card or bar", cls="ee-highlight"), " to filter the table to that aging range. Click again to clear."),
+                                Li(Span("Click a customer name", cls="ee-highlight"), " to open the detail drawer with addresses and contacts."),
+                                Li(Span("Click the notes icon", cls="ee-highlight"), " on any invoice row to view or add collection notes."),
+                                Li("Use the search box to find customers or invoices by name/number."),
+                                Li("Click column headers to sort ascending/descending."),
+                            ),
+                            H3("Data Sources"),
+                            Ul(
+                                Li(Code("FIVETRAN_DB.NETSUITE_SUITE.TRANSACTION"), " - Invoice records (type CustInvc)"),
+                                Li(Code("FIVETRAN_DB.NETSUITE_SUITE.CUSTOMER"), " - Customer master data"),
+                                Li(Code("FIVETRAN_DB.FT_SALESFORCE.ACCOUNT"), " - SFDC account matching"),
+                                Li(Code("FIVETRAN_DB.FT_SALESFORCE.CONTACT"), " - SFDC contact details"),
+                            ),
+                            cls="ee-walkthrough"
+                        ),
+                        id="ee-guide", cls="ee-panel"
+                    ),
+                    cls="ee-content"
+                ),
+                cls="ee-modal"
+            ),
+            id="ee-overlay", cls="ee-overlay", onclick="if(event.target===this)closeHelp()"
+        ),
     )
 
 
