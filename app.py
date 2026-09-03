@@ -428,7 +428,7 @@ function saveNotes() {
     }
     // update icon
     var icon = document.querySelector('tr[data-inv="' + inv + '"] .notes-icon');
-    if (icon) { icon.textContent = '\uD83D\uDCD3'; icon.classList.add('has-notes'); }
+    if (icon) { icon.innerHTML = '&#128211;'; icon.classList.add('has-notes'); }
     closeNotes();
 }
 
@@ -592,7 +592,7 @@ def get():
                             Td(badge(r['AGING_BUCKET'])),
                             Td(
                                 Span(
-                                    "\U0001F4D3" if _NOTES.get(r['INVOICE_NUMBER']) else "\u270F\uFE0F",
+                                    NotStr("&#128211;") if _NOTES.get(r['INVOICE_NUMBER']) else NotStr("&#9998;"),
                                     cls="notes-icon" + (" has-notes" if _NOTES.get(r['INVOICE_NUMBER']) else ""),
                                 ),
                                 cls="notes-cell",
