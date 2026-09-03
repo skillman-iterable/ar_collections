@@ -1342,17 +1342,8 @@ def get_customer_detail(acct_num: str):
         cls="drawer-summary"
     )
 
-    # Build meta section
-    meta_items = []
     org_id = d.get('ORG_ID') or ''
     sfdc_id = d.get('SFDC_ACCOUNT_ID') or ''
-    if org_id:
-        meta_items.append(Div(Div("Iterable Org ID", cls="dm-label"), Div(str(org_id), cls="dm-value"), cls="drawer-meta-item"))
-    if sfdc_id:
-        meta_items.append(Div(Div("SFDC Account ID", cls="dm-label"), Div(str(sfdc_id), cls="dm-value"), cls="drawer-meta-item"))
-    if not meta_items:
-        meta_items.append(Div(Div("Iterable Org ID", cls="dm-label"), Div("—", cls="dm-value"), cls="drawer-meta-item"))
-        meta_items.append(Div(Div("SFDC Account ID", cls="dm-label"), Div("—", cls="dm-value"), cls="drawer-meta-item"))
 
     # Address section
     def addr_card(label, prefix):
@@ -1452,6 +1443,8 @@ def get_customer_detail(acct_num: str):
         Div(
             Div(Span("SFDC Account Info"), cls="accordion-header", onclick="toggleAccordion(this)"),
             Div(Div(
+                _ei("Iterable Org ID", org_id),
+                _ei("SFDC Account ID", sfdc_id),
                 _ei("Account Owner", d.get('ACCOUNT_OWNER')),
                 _ei("CSM", d.get('CSM')),
                 _ei("CSM Manager", d.get('CSM_MANAGER')),
@@ -1460,7 +1453,7 @@ def get_customer_detail(acct_num: str):
                 _ei("Market Segment", d.get('MARKET_SEGMENT')),
                 cls="enrich-grid"
             ), cls="accordion-body"),
-            cls="accordion-item"
+            cls="accordion-item open"
         )
     )
 
@@ -1475,7 +1468,7 @@ def get_customer_detail(acct_num: str):
                 _ei("Customer Bank", d.get('CUSTOMER_BANK')),
                 cls="enrich-grid"
             ), cls="accordion-body"),
-            cls="accordion-item"
+            cls="accordion-item open"
         )
     )
 
@@ -1516,13 +1509,12 @@ def get_customer_detail(acct_num: str):
                 ),
                 cls="enrich-grid"
             ), cls="accordion-body"),
-            cls="accordion-item"
+            cls="accordion-item open"
         )
     )
 
     return Div(
         summary,
-        Div(*meta_items, cls="drawer-meta"),
         sfdc_section,
         ns_section,
         addr_section,
