@@ -497,6 +497,99 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     background: var(--surface2); padding: 2px 6px; border-radius: 4px;
     font-size: 12px; color: var(--yellow);
 }
+
+/* Theme toggle */
+.theme-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: 12px; padding: 5px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text-muted); font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s; vertical-align: middle;
+    font-family: inherit;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.theme-toggle .toggle-icon { font-size: 14px; }
+
+/* Iterable brand theme */
+[data-theme="iterable"] {
+    --bg: #f5f0eb; --surface: #ffffff; --surface2: #ede8e2;
+    --border: #d0c8bf; --text: #160f29; --text-muted: #5f6577;
+    --accent: #005a72; --green: #399d89; --yellow: #b8860b;
+    --orange: #c76a15; --red: #cc2936;
+}
+[data-theme="iterable"] body {
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+[data-theme="iterable"] .app-header {
+    background: linear-gradient(135deg, #005a72 0%, #2c8798 100%);
+    border-bottom: none;
+}
+[data-theme="iterable"] .app-header h1 { color: #ffffff; font-family: 'Spectral', Georgia, serif; font-weight: 600; }
+[data-theme="iterable"] .app-header .subtitle { color: rgba(255,255,255,0.75); }
+[data-theme="iterable"] .header-count { color: rgba(255,255,255,0.7); }
+[data-theme="iterable"] .header-total { color: #d5ff9f; }
+[data-theme="iterable"] .header-inv-amt { color: rgba(255,255,255,0.65); }
+[data-theme="iterable"] .refresh-btn {
+    background: rgba(255,255,255,0.15); color: #ffffff; border-color: rgba(255,255,255,0.3);
+}
+[data-theme="iterable"] .refresh-btn:hover { background: rgba(255,255,255,0.25); }
+[data-theme="iterable"] .help-btn {
+    background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); border-color: rgba(255,255,255,0.3);
+}
+[data-theme="iterable"] .help-btn:hover { color: #ffffff; border-color: #ffffff; background: rgba(255,255,255,0.25); }
+[data-theme="iterable"] .theme-toggle {
+    background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); border-color: rgba(255,255,255,0.3);
+}
+[data-theme="iterable"] .theme-toggle:hover { color: #ffffff; border-color: #ffffff; }
+
+/* Iterable metric cards */
+[data-theme="iterable"] .metric-card { box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+[data-theme="iterable"] .metric-card:hover { border-color: #2c8798; }
+[data-theme="iterable"] .metric-card.active { border-color: #2c8798; box-shadow: 0 0 0 1px #2c8798; }
+[data-theme="iterable"] .c-total .value { color: #005a72; }
+[data-theme="iterable"] .c-31 .value { color: #b8860b; }
+[data-theme="iterable"] .c-61 .value { color: #c76a15; }
+[data-theme="iterable"] .c-91 .value { color: #cc2936; }
+[data-theme="iterable"] .c-120 .value { color: #a01a28; }
+[data-theme="iterable"] .metric-card .label { color: #005a72; font-weight: 500; }
+[data-theme="iterable"] .metric-card .value { font-family: 'Spectral', Georgia, serif; }
+
+/* Iterable badges */
+[data-theme="iterable"] .b-31  { background: rgba(184,134,11,0.12); color: #8b6914; }
+[data-theme="iterable"] .b-61  { background: rgba(199,106,21,0.12); color: #9a5210; }
+[data-theme="iterable"] .b-91  { background: rgba(204,41,54,0.12); color: #a01a28; }
+[data-theme="iterable"] .b-120 { background: rgba(160,26,40,0.12); color: #7d1420; }
+
+/* Iterable panels and table */
+[data-theme="iterable"] .panel { box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+[data-theme="iterable"] .panel h3 { color: #005a72; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; }
+[data-theme="iterable"] .table-wrap { box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+[data-theme="iterable"] th { background: #ede8e2 !important; color: #005a72 !important; }
+[data-theme="iterable"] th:hover { color: #160f29 !important; }
+[data-theme="iterable"] th.sorted .arrow { color: #005a72; }
+[data-theme="iterable"] tbody tr:hover { background: #f5f0eb; }
+[data-theme="iterable"] tbody tr.selected { background: rgba(0,90,114,0.08); border-left: 3px solid #005a72; }
+[data-theme="iterable"] tfoot td { color: #005a72; background: #ede8e2; }
+
+/* Iterable drawer and modals */
+[data-theme="iterable"] .drawer { box-shadow: -4px 0 24px rgba(0,0,0,0.12); }
+[data-theme="iterable"] .drawer-bal { color: #005a72; }
+[data-theme="iterable"] .addr-card .addr-type { color: #2c8798; }
+[data-theme="iterable"] .contact-email a { color: #005a72; }
+[data-theme="iterable"] .drawer-overlay { background: rgba(22,15,41,0.3); }
+[data-theme="iterable"] .notes-overlay { background: rgba(22,15,41,0.4); }
+[data-theme="iterable"] .notes-btn.primary { background: #005a72; border-color: #005a72; }
+[data-theme="iterable"] .ee-overlay { background: rgba(22,15,41,0.4); }
+[data-theme="iterable"] .ee-modal { box-shadow: 0 24px 80px rgba(0,0,0,0.15); }
+[data-theme="iterable"] .ee-tab.active { color: #005a72; border-bottom-color: #005a72; }
+[data-theme="iterable"] .ee-walkthrough h3 { color: #005a72; }
+[data-theme="iterable"] .ee-walkthrough code { color: #b8860b; }
+
+/* Iterable filter bar */
+[data-theme="iterable"] .filter-bar input, [data-theme="iterable"] .filter-bar select {
+    background: #ffffff; border-color: #d0c8bf;
+}
+[data-theme="iterable"] .filter-bar input:focus, [data-theme="iterable"] .filter-bar select:focus { border-color: #005a72; }
 """
 
 # ---------------------------------------------------------------------------
@@ -758,7 +851,35 @@ function switchEETab(tab) {
     document.getElementById('ee-' + tab).classList.add('active');
 }
 
+// Theme toggle
+function toggleTheme() {
+    var html = document.documentElement;
+    var current = html.getAttribute('data-theme');
+    var icon = document.getElementById('theme-icon');
+    var label = document.getElementById('theme-label');
+    if (current === 'iterable') {
+        html.removeAttribute('data-theme');
+        if (icon) icon.textContent = '\\ud83c\\udf19';
+        if (label) label.textContent = 'Theme';
+        try { localStorage.setItem('ar-theme', 'dark'); } catch(e) {}
+    } else {
+        html.setAttribute('data-theme', 'iterable');
+        if (icon) icon.textContent = '\\u2600\\ufe0f';
+        if (label) label.textContent = 'Theme';
+        try { localStorage.setItem('ar-theme', 'iterable'); } catch(e) {}
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Restore saved theme
+    try {
+        var saved = localStorage.getItem('ar-theme');
+        if (saved === 'iterable') {
+            document.documentElement.setAttribute('data-theme', 'iterable');
+            var icon = document.getElementById('theme-icon');
+            if (icon) icon.textContent = '\\u2600\\ufe0f';
+        }
+    } catch(e) {}
     updateTotals();
 });
 """
@@ -1017,7 +1138,13 @@ def _data_flow_svg():
 # App
 # ---------------------------------------------------------------------------
 app, rt = fast_app(
-    hdrs=[Style(CSS), Script(JS)],
+    hdrs=[
+        Link(rel="preconnect", href="https://fonts.googleapis.com"),
+        Link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin=""),
+        Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Spectral:wght@600&display=swap"),
+        Style(CSS),
+        Script(JS),
+    ],
     pico=False,
     live=True,
 )
@@ -1234,6 +1361,7 @@ def get():
                     title=f"Balance Due: {fm(grand_total)}\nInvoice Amount: {fm(total_inv_amount)}",
                 ),
                 A("Refresh", href="/refresh", cls="refresh-btn"),
+                Button(Span("🌙", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch between Dark and Iterable themes"),
                 Button("?", cls="help-btn", onclick="openHelp()", title="About this report"),
                 cls="header-right"
             ),
