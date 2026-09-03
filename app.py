@@ -1279,7 +1279,6 @@ def _data_flow_svg():
 app, rt = fast_app(
     hdrs=[
         Link(rel="icon", href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23005a72'/><path d='M8 8l10 8-10 8' stroke='%23d5ff9f' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/><path d='M15 8l10 8-10 8' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round' opacity='.5'/></svg>"),
-        NotStr("<title>AR Collections | Iterable</title>"),
         Link(rel="preconnect", href="https://fonts.googleapis.com"),
         Link(rel="preconnect", href="https://fonts.gstatic.com", crossorigin=""),
         Link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Spectral:wght@600&display=swap"),
@@ -1288,6 +1287,7 @@ app, rt = fast_app(
     ],
     pico=False,
     live=True,
+    title="AR Aging",
 )
 
 
