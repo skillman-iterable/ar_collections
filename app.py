@@ -201,6 +201,7 @@ body {
 .header-right { text-align: right; }
 .header-count { color: var(--text-muted); font-size: 13px; margin-right: 16px; }
 .header-total { font-size: 20px; font-weight: 700; color: var(--accent); }
+.header-inv-amt { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
 .refresh-btn {
     display: inline-block; margin-left: 16px; padding: 6px 14px;
     background: var(--surface2); color: var(--accent); border: 1px solid var(--border);
@@ -523,8 +524,10 @@ function updateTotals() {
     }
     var hc = document.getElementById('header-count');
     var ht = document.getElementById('header-total');
+    var hi = document.getElementById('header-inv-amt');
     if (hc) hc.textContent = count + ' invoices';
     if (ht) ht.textContent = fm(totalBal);
+    if (hi) hi.textContent = 'Invoice Amount: ' + fm(totalAmt);
 }
 
 function updateTop10() {
@@ -1192,7 +1195,10 @@ def get():
             ),
             Div(
                 Span(f"{grand_count} invoices", cls="header-count", id="header-count"),
-                Span(fm(grand_total), cls="header-total", id="header-total"),
+                Div(
+                    Div(fm(grand_total), cls="header-total", id="header-total"),
+                    Div(f"Invoice Amount: {fm(total_inv_amount)}", cls="header-inv-amt", id="header-inv-amt"),
+                ),
                 A("Refresh", href="/refresh", cls="refresh-btn"),
                 Button("?", cls="help-btn", onclick="openHelp()", title="About this report"),
                 cls="header-right"
