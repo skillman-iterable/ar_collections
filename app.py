@@ -143,11 +143,18 @@ def _query_customer_details(conn=None):
 
 _startup_conn = _get_connection()
 _CACHED_DATA = _query_snowflake(_startup_conn)
+_startup_conn.close()
 print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
 
-_CUSTOMER_DETAIL = _query_customer_details(_startup_conn)
-_startup_conn.close()
-print(f"Loaded detail for {len(_CUSTOMER_DETAIL)} customers (addresses + contacts).")
+# Customer detail is lazy-loaded on first drawer open to avoid Cloud Run startup timeout
+_CUSTOMER_DETAIL = None
+
+def _ensure_customer_detail():
+    global _CUSTOMER_DETAIL
+    if _CUSTOMER_DETAIL is None:
+        print("Loading customer detail (first drawer open)...")
+        _CUSTOMER_DETAIL = _query_customer_details()
+        print(f"Loaded detail for {len(_CUSTOMER_DETAIL)} customers.")
 
 # Load notes from CSV export
 _NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'notes_data.json')
@@ -348,6 +355,12 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 }
 .drawer-close:hover { color: var(--text); }
 .drawer-body { padding: 0; }
+.drawer-summary {
+    display: flex; gap: 24px; padding: 16px 24px; border-bottom: 1px solid var(--border);
+    align-items: baseline;
+}
+.drawer-bal { font-size: 22px; font-weight: 700; color: var(--accent); }
+.drawer-inv-amt { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .drawer-meta {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
     padding: 16px 24px; border-bottom: 1px solid var(--border);
@@ -594,7 +607,7 @@ function saveNotes() {
 }
 
 // Customer detail drawer
-function openDrawer(acctNum) {
+function openDrawer(acctNum, custName) {
     // Highlight the row
     document.querySelectorAll('#ar-table tbody tr.selected').forEach(function(r) { r.classList.remove('selected'); });
     document.querySelectorAll('#ar-table tbody tr').forEach(function(r) {
@@ -602,6 +615,11 @@ function openDrawer(acctNum) {
             r.classList.add('selected');
         }
     });
+    // Update drawer header with customer name
+    var dh = document.getElementById('drawer-cust-name');
+    if (dh) dh.textContent = custName || '';
+    var da = document.getElementById('drawer-acct-num');
+    if (da) da.textContent = 'Acct #' + acctNum;
     // Fetch drawer content via HTMX-like fetch
     var drawer = document.getElementById('customer-drawer');
     var overlay = document.getElementById('drawer-overlay');
@@ -658,9 +676,31 @@ def _esc(s):
 
 @rt("/customer-detail/{acct_num}")
 def get_customer_detail(acct_num: str):
+    _ensure_customer_detail()
     d = _CUSTOMER_DETAIL.get(acct_num, {})
     if not d:
         return Div(Div("No detail available for this account.", cls="no-data", style="padding:24px;"))
+
+    # Compute AR totals for this customer from cached invoice data
+    cust_invoices = [r for r in (_CACHED_DATA or []) if str(r['ACCOUNT_NUMBER']) == acct_num]
+    cust_balance = sum(r['INVOICE_BALANCE'] for r in cust_invoices)
+    cust_inv_amount = sum(r['INVOICE_AMOUNT'] for r in cust_invoices)
+    cust_inv_count = len(cust_invoices)
+
+    # Build summary section (balance + invoice amount)
+    summary = Div(
+        Div(
+            Div(fm(cust_balance), cls="drawer-bal"),
+            Div(f"Outstanding balance ({cust_inv_count} invoices)", cls="drawer-inv-amt"),
+            cls="drawer-summary-col"
+        ),
+        Div(
+            Div(fm(cust_inv_amount), cls="drawer-bal", style="color: var(--text);"),
+            Div("Original invoice total", cls="drawer-inv-amt"),
+            cls="drawer-summary-col"
+        ),
+        cls="drawer-summary"
+    )
 
     # Build meta section
     meta_items = []
@@ -765,6 +805,7 @@ def get_customer_detail(acct_num: str):
     )
 
     return Div(
+        summary,
         Div(*meta_items, cls="drawer-meta"),
         addr_section,
         contact_section,
@@ -904,7 +945,7 @@ def get():
                         Tr(
                             Td(str(r['ACCOUNT_NUMBER']), data_val=str(r['ACCOUNT_NUMBER'])),
                             Td(str(r['CUSTOMER_NAME']), cls="cust",
-                               onclick=f"openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}')"),
+                               onclick=f"openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}', '{_esc(str(r['CUSTOMER_NAME']))}')"),
                             Td(str(r['INVOICE_NUMBER'])),
                             Td(str(r['INVOICE_DATE']), data_val=str(r['INVOICE_DATE'])),
                             Td(fm(r['INVOICE_AMOUNT']), cls="r", data_val=str(r['INVOICE_AMOUNT'])),
@@ -961,7 +1002,8 @@ def get():
         Div(
             Div(
                 Div(
-                    H3("Customer Details", style="margin:0;"),
+                    H3("", id="drawer-cust-name", style="margin:0;"),
+                    Div("", id="drawer-acct-num", cls="drawer-sub"),
                     cls="drawer-header-left"
                 ),
                 Button(NotStr("&times;"), cls="drawer-close", onclick="closeDrawer()"),
@@ -979,7 +1021,7 @@ def get():
 def refresh_data():
     global _CACHED_DATA, _CUSTOMER_DETAIL
     _CACHED_DATA = _query_snowflake()
-    _CUSTOMER_DETAIL = _query_customer_details()
+    _CUSTOMER_DETAIL = None  # will lazy-load on next drawer open
     return RedirectResponse("/", status_code=303)
 
 
