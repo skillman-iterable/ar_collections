@@ -422,7 +422,7 @@ function saveNotes() {
     var ts = new Date().toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'});
     var full = ts + ' - ' + newNote;
     if (existing) {
-        userNotes[inv] = full + '\n---\n' + existing;
+        userNotes[inv] = full + '\\n---\\n' + existing;
     } else {
         userNotes[inv] = full;
     }
