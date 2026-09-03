@@ -1,8 +1,8 @@
 from fasthtml.common import *
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 import snowflake.connector
 from datetime import date
-import os, json
+import os, json, io
 
 # ---------------------------------------------------------------------------
 # Data layer
@@ -227,6 +227,30 @@ body {
 }
 .filter-bar input:focus, .filter-bar select:focus { border-color: var(--accent); }
 .filter-bar input { min-width: 280px; }
+
+/* Export dropdown */
+.export-wrap { position: relative; }
+.export-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text-muted); font-size: 12px;
+    font-weight: 500; cursor: pointer; font-family: inherit; transition: all 0.2s;
+}
+.export-btn:hover { border-color: var(--accent); color: var(--accent); }
+.export-menu {
+    display: none; position: absolute; top: 100%; right: 0; margin-top: 4px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 100; min-width: 180px;
+    overflow: hidden;
+}
+.export-menu.open { display: block; }
+.export-menu a {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    color: var(--text); text-decoration: none; font-size: 13px;
+    transition: background 0.15s;
+}
+.export-menu a:hover { background: var(--surface2); }
+.export-menu a .exp-icon { font-size: 16px; width: 20px; text-align: center; }
 
 .badge {
     display: inline-block; padding: 3px 10px; border-radius: 20px;
@@ -555,6 +579,10 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     background: #ffffff; border-color: #c8bfb4; border-radius: 8px;
 }
 [data-theme="iterable"] .filter-bar input:focus, [data-theme="iterable"] .filter-bar select:focus { border-color: #005a72; }
+[data-theme="iterable"] .export-btn { background: #ffffff; border-color: #c8bfb4; }
+[data-theme="iterable"] .export-btn:hover { border-color: #005a72; color: #005a72; }
+[data-theme="iterable"] .export-menu { background: #ffffff; border-color: #c8bfb4; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+[data-theme="iterable"] .export-menu a:hover { background: #f5f0eb; }
 
 /* Iterable scrollbar */
 [data-theme="iterable"] ::-webkit-scrollbar { width: 8px; }
@@ -811,6 +839,39 @@ function closeDrawer() {
 function toggleAccordion(el) {
     var item = el.parentElement;
     item.classList.toggle('open');
+}
+
+// Export dropdown
+function toggleExport(e) {
+    e.stopPropagation();
+    document.getElementById('export-menu').classList.toggle('open');
+}
+document.addEventListener('click', function() {
+    var m = document.getElementById('export-menu');
+    if (m) m.classList.remove('open');
+});
+function exportGSheets() {
+    // Build CSV from visible rows, then open Google Sheets import
+    var rows = getVisibleRows();
+    var csv = 'Account #,Customer,Invoice #,Inv Date,Inv Amount,Due Date,Balance,Days Past Due,Bucket\\n';
+    rows.forEach(function(r) {
+        var cells = r.querySelectorAll('td');
+        var line = [];
+        for (var i = 0; i < 9; i++) {
+            var val = (i === 4 || i === 6) ? (cells[i].getAttribute('data-val') || '0') : cells[i].textContent.trim();
+            if (val.indexOf(',') >= 0 || val.indexOf('"') >= 0) val = '"' + val.replace(/"/g, '""') + '"';
+            line.push(val);
+        }
+        csv += line.join(',') + '\\n';
+    });
+    var blob = new Blob([csv], {type: 'text/csv'});
+    var url = URL.createObjectURL(blob);
+    // Download CSV first, then open Google Sheets
+    var a = document.createElement('a');
+    a.href = url; a.download = 'ar_aging_export.csv'; a.click();
+    setTimeout(function() {
+        window.open('https://sheets.google.com/create', '_blank');
+    }, 500);
 }
 
 // Easter egg modal
@@ -1405,6 +1466,16 @@ def get():
                     Option("120+ Days", value="120+"),
                     id="bucket-filter", onchange="activeBucket=this.value;applyFilters()"
                 ),
+                Div(
+                    Button(Span("⬇", cls="exp-icon"), "Export", cls="export-btn", onclick="toggleExport(event)"),
+                    Div(
+                        A(Span("📄", cls="exp-icon"), "CSV", href="/export/csv"),
+                        A(Span("📊", cls="exp-icon"), "Excel (.xlsx)", href="/export/excel"),
+                        A(Span("🟩", cls="exp-icon"), "Google Sheets", href="#", onclick="event.preventDefault();exportGSheets()"),
+                        id="export-menu", cls="export-menu"
+                    ),
+                    cls="export-wrap"
+                ),
                 cls="filter-bar"
             ),
 
@@ -1583,6 +1654,78 @@ def refresh_data():
     _CACHED_DATA = _query_snowflake()
     _CUSTOMER_DETAIL_CACHE = {}
     return RedirectResponse("/", status_code=303)
+
+
+@rt("/export/{fmt}")
+def export_data(fmt: str):
+    data = _CACHED_DATA or []
+    headers = ["Account #", "Customer", "Invoice #", "Inv Date", "Inv Amount", "Due Date", "Balance", "Days Past Due", "Bucket"]
+    rows = []
+    for r in data:
+        rows.append([
+            str(r.get('ACCOUNT_NUMBER', '')),
+            str(r.get('CUSTOMER_NAME', '')),
+            str(r.get('INVOICE_NUMBER', '')),
+            str(r.get('INVOICE_DATE', '')),
+            r.get('INVOICE_AMOUNT', 0),
+            str(r.get('DUE_DATE', '')),
+            r.get('INVOICE_BALANCE', 0),
+            r.get('DAYS_PAST_DUE', 0),
+            str(r.get('AGING_BUCKET', '')),
+        ])
+
+    if fmt == 'csv':
+        import csv
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(headers)
+        w.writerows(rows)
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=ar_aging_{date.today().isoformat()}.csv"}
+        )
+
+    if fmt == 'excel':
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, numbers
+        except ImportError:
+            return Response(content="openpyxl not installed", status_code=500)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "AR Aging"
+        # Header row
+        hdr_font = Font(bold=True, color="FFFFFF", size=11)
+        hdr_fill = PatternFill(start_color="005A72", end_color="005A72", fill_type="solid")
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal="center")
+        # Data rows
+        money_fmt = '#,##0.00'
+        for ri, row in enumerate(rows, 2):
+            for ci, val in enumerate(row, 1):
+                cell = ws.cell(row=ri, column=ci, value=val)
+                if ci in (5, 7):  # Inv Amount, Balance
+                    cell.number_format = money_fmt
+                if ci == 8:  # Days Past Due
+                    cell.number_format = '0'
+        # Auto-width
+        for col in ws.columns:
+            max_len = max(len(str(c.value or '')) for c in col) + 2
+            ws.column_dimensions[col[0].column_letter].width = min(max_len, 30)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=ar_aging_{date.today().isoformat()}.xlsx"}
+        )
+
+    return Response(content="Unknown format", status_code=400)
 
 
 serve(host="0.0.0.0", port=int(os.environ.get("PORT", 5099)))
