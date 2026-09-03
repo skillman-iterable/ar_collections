@@ -2,7 +2,7 @@ from fasthtml.common import *
 from starlette.responses import RedirectResponse
 import snowflake.connector
 from datetime import date
-import os, json
+import os, json, threading
 
 # ---------------------------------------------------------------------------
 # Data layer
@@ -157,15 +157,25 @@ _CACHED_DATA = _query_snowflake(_startup_conn)
 _startup_conn.close()
 print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
 
-# Customer detail is lazy-loaded on first drawer open to avoid Cloud Run startup timeout
+# Customer detail loads in a background thread so the app starts fast
+# but drawer data is ready by the time someone clicks
 _CUSTOMER_DETAIL = None
+_CUSTOMER_DETAIL_LOADING = False
 
-def _ensure_customer_detail():
-    global _CUSTOMER_DETAIL
-    if _CUSTOMER_DETAIL is None:
-        print("Loading customer detail (first drawer open)...")
+def _load_customer_detail_bg():
+    global _CUSTOMER_DETAIL, _CUSTOMER_DETAIL_LOADING
+    _CUSTOMER_DETAIL_LOADING = True
+    try:
+        print("Background: loading customer detail...")
         _CUSTOMER_DETAIL = _query_customer_details()
-        print(f"Loaded detail for {len(_CUSTOMER_DETAIL)} customers.")
+        print(f"Background: loaded detail for {len(_CUSTOMER_DETAIL)} customers.")
+    except Exception as e:
+        print(f"Background: failed to load customer detail: {e}")
+    finally:
+        _CUSTOMER_DETAIL_LOADING = False
+
+# Start background load immediately after startup
+threading.Thread(target=_load_customer_detail_bg, daemon=True).start()
 
 # Load notes from CSV export
 _NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'notes_data.json')
@@ -704,7 +714,19 @@ function openDrawer(acctNum, custName) {
     overlay.classList.add('open');
     fetch('/customer-detail/' + encodeURIComponent(acctNum))
         .then(function(r) { return r.text(); })
-        .then(function(html) { body.innerHTML = html; });
+        .then(function(html) {
+            body.innerHTML = html;
+            // Auto-retry if still loading
+            if (html.indexOf('Loading customer data') >= 0) {
+                setTimeout(function() {
+                    if (drawer.classList.contains('open')) {
+                        fetch('/customer-detail/' + encodeURIComponent(acctNum))
+                            .then(function(r) { return r.text(); })
+                            .then(function(h) { body.innerHTML = h; });
+                    }
+                }, 5000);
+            }
+        });
 }
 
 function closeDrawer() {
@@ -1016,7 +1038,15 @@ def _esc(s):
 
 @rt("/customer-detail/{acct_num}")
 def get_customer_detail(acct_num: str):
-    _ensure_customer_detail()
+    if _CUSTOMER_DETAIL is None:
+        if _CUSTOMER_DETAIL_LOADING:
+            return Div(Div(
+                Div("Loading customer data...", style="font-size:14px;color:var(--text);margin-bottom:8px;"),
+                Div("Detail is being fetched from Snowflake. This typically takes 30-60 seconds on first load.", style="font-size:12px;color:var(--text-muted);margin-bottom:16px;"),
+                Div("Try again in a moment.", style="font-size:12px;color:var(--accent);"),
+                style="padding:24px;"
+            ))
+        return Div(Div("Customer detail is not available.", cls="no-data", style="padding:24px;"))
     d = _CUSTOMER_DETAIL.get(acct_num, {})
     if not d:
         return Div(Div("No detail available for this account.", cls="no-data", style="padding:24px;"))
@@ -1443,7 +1473,8 @@ def get():
 def refresh_data():
     global _CACHED_DATA, _CUSTOMER_DETAIL
     _CACHED_DATA = _query_snowflake()
-    _CUSTOMER_DETAIL = None  # will lazy-load on next drawer open
+    _CUSTOMER_DETAIL = None
+    threading.Thread(target=_load_customer_detail_bg, daemon=True).start()
     return RedirectResponse("/", status_code=303)
 
 
