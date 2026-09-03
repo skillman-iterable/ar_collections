@@ -210,8 +210,8 @@ body {
 .app-header .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
 .header-right { text-align: right; }
 .header-count { color: var(--text-muted); font-size: 13px; margin-right: 16px; }
-.header-total { font-size: 20px; font-weight: 700; color: var(--accent); }
-.header-inv-amt { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.header-total { font-size: 20px; font-weight: 700; color: var(--accent); display: inline; }
+.header-inv-amt { font-size: 11px; color: var(--text-muted); margin-left: 4px; display: inline; }
 .refresh-btn {
     display: inline-block; margin-left: 16px; padding: 6px 14px;
     background: var(--surface2); color: var(--accent); border: 1px solid var(--border);
@@ -537,7 +537,10 @@ function updateTotals() {
     var hi = document.getElementById('header-inv-amt');
     if (hc) hc.textContent = count + ' invoices';
     if (ht) ht.textContent = fm(totalBal);
-    if (hi) hi.textContent = 'Invoice Amount: ' + fm(totalAmt);
+    if (hi) {
+        hi.textContent = 'Inv Amt: ' + fm(totalAmt);
+        hi.parentElement.title = 'Balance Due: ' + fm(totalBal) + '\\nInvoice Amount: ' + fm(totalAmt);
+    }
 }
 
 function updateTop10() {
@@ -1225,9 +1228,10 @@ def get():
             ),
             Div(
                 Span(f"{grand_count} invoices", cls="header-count", id="header-count"),
-                Div(
-                    Div(fm(grand_total), cls="header-total", id="header-total"),
-                    Div(f"Invoice Amount: {fm(total_inv_amount)}", cls="header-inv-amt", id="header-inv-amt"),
+                Span(
+                    Span(fm(grand_total), cls="header-total", id="header-total"),
+                    Span(f"Inv Amt: {fm(total_inv_amount)}", cls="header-inv-amt", id="header-inv-amt"),
+                    title=f"Balance Due: {fm(grand_total)}\nInvoice Amount: {fm(total_inv_amount)}",
                 ),
                 A("Refresh", href="/refresh", cls="refresh-btn"),
                 Button("?", cls="help-btn", onclick="openHelp()", title="About this report"),
