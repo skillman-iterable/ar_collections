@@ -997,11 +997,15 @@ function openHelp() {
 }
 function closeHelp() {
     document.getElementById('ee-overlay').classList.remove('open');
+    stopDiagPoll();
 }
 
+var _diagInterval = null;
 function loadDiagnostics() {
     var el = document.getElementById('diag-content');
-    el.innerHTML = '<span style="color:var(--text-muted)">Loading...</span>';
+    if (!el.innerHTML || el.innerHTML.indexOf('Loading') === -1 || el.innerHTML.length < 20) {
+        el.innerHTML = '<span style="color:var(--text-muted)">Loading...</span>';
+    }
     fetch('/diagnostics')
         .then(function(r) { return r.json(); })
         .then(function(d) {
@@ -1029,7 +1033,17 @@ function loadDiagnostics() {
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Warmup Finished</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.warmup_finished || '—') + '</td></tr>' +
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Last Refresh</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.last_refresh || '—') + '</td></tr>' +
                 '</table>';
+            // Auto-poll every 3s while warmup is in progress, stop when done
+            if (d.warmup_in_progress && !_diagInterval) {
+                _diagInterval = setInterval(loadDiagnostics, 3000);
+            } else if (!d.warmup_in_progress && _diagInterval) {
+                clearInterval(_diagInterval);
+                _diagInterval = null;
+            }
         });
+}
+function stopDiagPoll() {
+    if (_diagInterval) { clearInterval(_diagInterval); _diagInterval = null; }
 }
 function switchEETab(tab) {
     document.querySelectorAll('.ee-tab').forEach(function(t) { t.classList.remove('active'); });
