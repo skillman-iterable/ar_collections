@@ -6,3 +6,4 @@ ar_aging_venv/
 dist/
 build/
 .keys/
+.sesskey
