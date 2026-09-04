@@ -24,8 +24,8 @@ def _get_connection():
             encryption_algorithm=serialization.NoEncryption(),
         )
         return snowflake.connector.connect(
-            account=os.environ.get("SNOWFLAKE_ACCOUNT", "PP13258-ITERABLE"),
-            user=os.environ.get("SNOWFLAKE_USER", "shawn.skillman@iterable.com"),
+            account=os.environ["SNOWFLAKE_ACCOUNT"],
+            user=os.environ["SNOWFLAKE_USER"],
             private_key=pkb,
             warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "BILLING_PIPE"),
         )
@@ -134,8 +134,8 @@ def _query_single_customer(acct_num, conn=None):
             uid = sfdc.get(sf_col)
             if uid: user_ids.add(uid)
         if user_ids:
-            id_list = ",".join([f"'{uid}'" for uid in user_ids])
-            cur.execute(f"SELECT DISTINCT ID, NAME FROM FIVETRAN_DB.FT_SALESFORCE.USER WHERE ID IN ({id_list})")
+            placeholders = ",".join(["%s"] * len(user_ids))
+            cur.execute(f"SELECT DISTINCT ID, NAME FROM FIVETRAN_DB.FT_SALESFORCE.USER WHERE ID IN ({placeholders})", list(user_ids))
             user_map = {r[0]: r[1] for r in cur.fetchall()}
             for sf_col, detail_key in id_fields.items():
                 uid = sfdc.get(sf_col)
@@ -236,8 +236,8 @@ def _query_all_customer_details(conn=None):
     # Query 2: Resolve all SFDC user IDs to names in one shot
     user_map = {}
     if all_user_ids:
-        id_list = ",".join([f"'{uid}'" for uid in all_user_ids])
-        cur.execute(f"SELECT DISTINCT ID, NAME FROM FIVETRAN_DB.FT_SALESFORCE.USER WHERE ID IN ({id_list})")
+        placeholders = ",".join(["%s"] * len(all_user_ids))
+        cur.execute(f"SELECT DISTINCT ID, NAME FROM FIVETRAN_DB.FT_SALESFORCE.USER WHERE ID IN ({placeholders})", list(all_user_ids))
         user_map = {r[0]: r[1] for r in cur.fetchall()}
         print(f"Bulk query 2: {len(user_map)} user IDs resolved")
     id_fields = {'CSM_C': 'CSM', 'CSM_MANAGER_C': 'CSM_MANAGER', 'AE_C': 'AE'}
@@ -248,13 +248,13 @@ def _query_all_customer_details(conn=None):
 
     # Query 3: Bulk-fetch all contacts for all SFDC account IDs
     if all_sfdc_ids:
-        id_list = ",".join([f"'{sid}'" for sid in all_sfdc_ids])
+        placeholders = ",".join(["%s"] * len(all_sfdc_ids))
         cur.execute(f"""
             SELECT ACCOUNT_ID, NAME, TITLE, EMAIL, PHONE
             FROM FIVETRAN_DB.FT_SALESFORCE.CONTACT
-            WHERE IS_DELETED = false AND ACCOUNT_ID IN ({id_list})
+            WHERE IS_DELETED = false AND ACCOUNT_ID IN ({placeholders})
             ORDER BY ACCOUNT_ID, NAME
-        """)
+        """, list(all_sfdc_ids))
         contacts_by_sfdc = {}
         for cr in cur.fetchall():
             sfdc_id = cr[0]
@@ -873,7 +873,9 @@ function updateTop10() {
     ul.innerHTML = '';
     sorted.forEach(function(pair) {
         var li = document.createElement('li');
-        li.innerHTML = '<span class="top-name">' + pair[0] + '</span><span class="top-amt">' + fm(pair[1]) + '</span>';
+        var nameSpan = document.createElement('span'); nameSpan.className = 'top-name'; nameSpan.textContent = pair[0];
+        var amtSpan = document.createElement('span'); amtSpan.className = 'top-amt'; amtSpan.textContent = fm(pair[1]);
+        li.innerHTML = ''; li.appendChild(nameSpan); li.appendChild(amtSpan);
         ul.appendChild(li);
     });
 }
@@ -1470,6 +1472,37 @@ app, rt = fast_app(
     live=os.environ.get("LIVE_RELOAD", "false").lower() == "true",
     title="AR Aging",
 )
+
+# Security: Auth enforcement middleware (requires IAP headers in production)
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    OPEN_PATHS = {'/favicon.ico', '/whoami'}
+
+    async def dispatch(self, request, call_next):
+        # Skip auth check if demo mode or local dev override is set
+        if os.getenv("AR_USE_DEMO", "").lower() in ("1", "true", "yes") or os.getenv("AR_SESSION_EMAIL"):
+            return await call_next(request)
+        # Skip for open paths
+        if request.url.path in self.OPEN_PATHS:
+            return await call_next(request)
+        # Require IAP header
+        email = request.headers.get("x-goog-authenticated-user-email", "")
+        if not email:
+            return Response(content="Unauthorized — this app requires authentication via Google IAP.", status_code=401, media_type="text/plain")
+        return await call_next(request)
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(AuthMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 def fm(val):
