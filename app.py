@@ -1,8 +1,10 @@
 from fasthtml.common import *
 from starlette.responses import RedirectResponse, Response
+from starlette.requests import Request
 import snowflake.connector
 from datetime import date
 import os, json, io, threading, time
+from session_user import session_user
 
 # ---------------------------------------------------------------------------
 # Data layer
@@ -353,7 +355,10 @@ body {
 }
 .app-header h1 { font-size: 20px; font-weight: 600; color: var(--text); }
 .app-header .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
-.header-right { text-align: right; }
+.header-right { text-align: right; display: flex; align-items: center; gap: 12px; }
+.header-user { font-size: 11px; color: var(--text-muted); text-align: right; line-height: 1.4; }
+.header-user .user-name { font-weight: 600; color: var(--text); font-size: 12px; }
+.header-user .user-email { opacity: 0.7; }
 .header-count { color: var(--text-muted); font-size: 13px; margin-right: 16px; }
 .header-total { font-size: 20px; font-weight: 700; color: var(--accent); display: inline; }
 .header-inv-amt { font-size: 11px; color: var(--text-muted); margin-left: 4px; display: inline; }
@@ -1700,7 +1705,7 @@ def get_customer_detail(acct_num: str):
 
 
 @rt("/")
-def get():
+def get(request: Request):
     data = _CACHED_DATA or []
     today = date.today().strftime("%B %d, %Y")
 
@@ -1750,6 +1755,11 @@ def get():
                 A("Refresh", href="/refresh", cls="refresh-btn"),
                 Button(Span("🌙", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch between Dark and Iterable themes"),
                 Button("?", cls="help-btn", onclick="openHelp()", title="About this report"),
+                Div(
+                    Div(session_user(request).name, cls="user-name") if session_user(request).name else "",
+                    Div(session_user(request).email, cls="user-email") if session_user(request).email else "",
+                    cls="header-user"
+                ) if session_user(request).email else "",
                 cls="header-right"
             ),
             cls="app-header"
@@ -2091,6 +2101,23 @@ def diagnostics():
             'resolution_count': len([k for k in _NOTES if k.startswith('res_')]),
             'ptp_count': len([k for k in _NOTES if k.startswith('ptp_')]),
         }, indent=2),
+        media_type="application/json"
+    )
+
+
+@rt("/whoami")
+def whoami(request: Request):
+    user = session_user(request)
+    h = request.headers
+    source = "anonymous"
+    if h.get("x-goog-authenticated-user-email"):
+        source = "iap-header"
+    elif os.getenv("AR_SESSION_EMAIL"):
+        source = "env-var"
+    elif os.getenv("AR_USE_DEMO", "").lower() in ("1", "true", "yes"):
+        source = "demo"
+    return Response(
+        content=json.dumps({'email': user.email, 'name': user.name, 'source': source}, indent=2),
         media_type="application/json"
     )
 
