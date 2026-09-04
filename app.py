@@ -100,10 +100,6 @@ def _query_single_customer(acct_num, conn=None):
     cols = [d[0] for d in cur.description]
     detail = dict(zip(cols, rows[0]))
     detail['contacts'] = []
-    # Resolve NS reference IDs to names
-    _SUBSIDIARY_MAP = {1: 'Iterable, Inc.', 3: 'Iterable UK', 7: 'Iterable EU', 9: 'Iterable JP', 10: 'Iterable AU'}
-    _PAYMENT_METHOD_MAP = {2: 'Credit Card', 7: 'ACH/Wire', 8: 'Check', 9: 'Other'}
-    _BANK_MAP = {1: 'SVB', 2: 'HSBC', 3: 'JP Morgan'}
     detail['SUBSIDIARY'] = _SUBSIDIARY_MAP.get(detail.get('SUBSIDIARY_ID'), str(detail.get('SUBSIDIARY_ID') or '—'))
     detail['PAYMENT_METHOD'] = _PAYMENT_METHOD_MAP.get(detail.get('PAYMENT_METHOD_ID'), str(detail.get('PAYMENT_METHOD_ID') or '—'))
     detail['CUSTOMER_BANK'] = _BANK_MAP.get(detail.get('CUSTOMER_BANK_ID'), str(detail.get('CUSTOMER_BANK_ID') or '—'))
@@ -165,6 +161,117 @@ def _query_single_customer(acct_num, conn=None):
     if own_conn: conn.close()
     return detail
 
+_SUBSIDIARY_MAP = {1: 'Iterable, Inc.', 3: 'Iterable UK', 7: 'Iterable EU', 9: 'Iterable JP', 10: 'Iterable AU'}
+_PAYMENT_METHOD_MAP = {2: 'Credit Card', 7: 'ACH/Wire', 8: 'Check', 9: 'Other'}
+_BANK_MAP = {1: 'SVB', 2: 'HSBC', 3: 'JP Morgan'}
+
+def _query_all_customer_details(conn=None):
+    """Bulk-fetch ALL customer details + SFDC enrichment + contacts in ~3 queries."""
+    own_conn = conn is None
+    if own_conn: conn = _get_connection()
+    cur = conn.cursor()
+
+    # Query 1: All customers with addresses + SFDC enrichment in one shot
+    cur.execute("""
+        SELECT
+            c.ENTITYID AS account_number, c.COMPANYNAME AS customer_name,
+            c.CUSTENTITY_ITR_ORG_ID AS org_id, c.SUBSIDIARY AS subsidiary_id,
+            cc.NAME AS category, c.CUSTENTITY_PAYMENT_METHOD AS payment_method_id,
+            c.CUSTENTITY_ITER_CUSTOMER_BANK AS customer_bank_id,
+            ba.ATTENTION AS bill_attention, ba.ADDRESSEE AS bill_addressee,
+            ba.ADDR1 AS bill_addr1, ba.ADDR2 AS bill_addr2,
+            ba.CITY AS bill_city, ba.STATE AS bill_state, ba.ZIP AS bill_zip, ba.COUNTRY AS bill_country,
+            sha.ATTENTION AS ship_attention, sha.ADDRESSEE AS ship_addressee,
+            sha.ADDR1 AS ship_addr1, sha.ADDR2 AS ship_addr2,
+            sha.CITY AS ship_city, sha.STATE AS ship_state, sha.ZIP AS ship_zip, sha.COUNTRY AS ship_country,
+            sa.ACCOUNT_ID AS sfdc_account_id, sa.OWNER_NAME AS account_owner,
+            sa.CSM_C, sa.CSM_MANAGER_C, sa.AE_C,
+            sa.AM_OWNER AS cam, sa.MARKET_SEGMENT_C AS market_segment
+        FROM FIVETRAN_DB.NETSUITE_SUITE.CUSTOMER c
+        LEFT JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMERADDRESSBOOKENTITYADDRESS ba
+            ON c.DEFAULTBILLINGADDRESS = ba.NKEY AND ba._FIVETRAN_DELETED = false
+        LEFT JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMERADDRESSBOOKENTITYADDRESS sha
+            ON c.DEFAULTSHIPPINGADDRESS = sha.NKEY AND sha._FIVETRAN_DELETED = false
+        LEFT JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMERCATEGORY cc
+            ON c.CATEGORY = cc.ID AND cc._FIVETRAN_DELETED = false
+        LEFT JOIN (
+            SELECT ACCOUNT_ID, ACCOUNT_NAME, OWNER_NAME, CSM_C, CSM_MANAGER_C, AE_C, AM_OWNER, MARKET_SEGMENT_C
+            FROM ANALYTICS_PROD.BI_GTM.SRC_SF_ACCOUNT
+            WHERE IS_DELETED = false
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY UPPER(ACCOUNT_NAME) ORDER BY CREATED_DATE DESC) = 1
+        ) sa ON UPPER(c.COMPANYNAME) = UPPER(sa.ACCOUNT_NAME)
+        WHERE c._FIVETRAN_DELETED = false
+          AND c.ENTITYID IN (
+              SELECT DISTINCT c2.ENTITYID
+              FROM FIVETRAN_DB.NETSUITE_SUITE.TRANSACTION t
+              JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMER c2 ON t.ENTITY = c2.ID
+              WHERE t.TYPE = 'CustInvc' AND t._FIVETRAN_DELETED = false
+                AND t.FOREIGNAMOUNTUNPAID > 0
+                AND DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) >= 31
+          )
+    """)
+    rows = cur.fetchall()
+    cols = [d[0] for d in cur.description]
+    details_by_acct = {}
+    all_sfdc_ids = set()
+    all_user_ids = set()
+    for row in rows:
+        detail = dict(zip(cols, row))
+        acct = str(detail['ACCOUNT_NUMBER'])
+        detail['contacts'] = []
+        detail['SUBSIDIARY'] = _SUBSIDIARY_MAP.get(detail.get('SUBSIDIARY_ID'), str(detail.get('SUBSIDIARY_ID') or '—'))
+        detail['PAYMENT_METHOD'] = _PAYMENT_METHOD_MAP.get(detail.get('PAYMENT_METHOD_ID'), str(detail.get('PAYMENT_METHOD_ID') or '—'))
+        detail['CUSTOMER_BANK'] = _BANK_MAP.get(detail.get('CUSTOMER_BANK_ID'), str(detail.get('CUSTOMER_BANK_ID') or '—'))
+        sfdc_id = detail.get('SFDC_ACCOUNT_ID')
+        if sfdc_id:
+            all_sfdc_ids.add(sfdc_id)
+        for col in ('CSM_C', 'CSM_MANAGER_C', 'AE_C'):
+            uid = detail.get(col)
+            if uid: all_user_ids.add(uid)
+        details_by_acct[acct] = detail
+    print(f"Bulk query 1: {len(details_by_acct)} customers fetched")
+
+    # Query 2: Resolve all SFDC user IDs to names in one shot
+    user_map = {}
+    if all_user_ids:
+        id_list = ",".join([f"'{uid}'" for uid in all_user_ids])
+        cur.execute(f"SELECT DISTINCT ID, NAME FROM FIVETRAN_DB.FT_SALESFORCE.USER WHERE ID IN ({id_list})")
+        user_map = {r[0]: r[1] for r in cur.fetchall()}
+        print(f"Bulk query 2: {len(user_map)} user IDs resolved")
+    id_fields = {'CSM_C': 'CSM', 'CSM_MANAGER_C': 'CSM_MANAGER', 'AE_C': 'AE'}
+    for detail in details_by_acct.values():
+        for sf_col, detail_key in id_fields.items():
+            uid = detail.get(sf_col)
+            detail[detail_key] = user_map.get(uid, '') if uid else ''
+
+    # Query 3: Bulk-fetch all contacts for all SFDC account IDs
+    if all_sfdc_ids:
+        id_list = ",".join([f"'{sid}'" for sid in all_sfdc_ids])
+        cur.execute(f"""
+            SELECT ACCOUNT_ID, NAME, TITLE, EMAIL, PHONE
+            FROM FIVETRAN_DB.FT_SALESFORCE.CONTACT
+            WHERE IS_DELETED = false AND ACCOUNT_ID IN ({id_list})
+            ORDER BY ACCOUNT_ID, NAME
+        """)
+        contacts_by_sfdc = {}
+        for cr in cur.fetchall():
+            sfdc_id = cr[0]
+            contact = {'name': cr[1] or '', 'title': cr[2] or '', 'email': cr[3] or '', 'phone': cr[4] or ''}
+            contacts_by_sfdc.setdefault(sfdc_id, []).append(contact)
+        print(f"Bulk query 3: {sum(len(v) for v in contacts_by_sfdc.values())} contacts fetched for {len(contacts_by_sfdc)} accounts")
+        for detail in details_by_acct.values():
+            sfdc_id = detail.get('SFDC_ACCOUNT_ID')
+            if sfdc_id and sfdc_id in contacts_by_sfdc:
+                seen = set()
+                for c in contacts_by_sfdc[sfdc_id]:
+                    key = c['email'] or c['name']
+                    if key not in seen:
+                        seen.add(key)
+                        detail['contacts'].append(c)
+
+    if own_conn: conn.close()
+    return details_by_acct
+
 _startup_conn = _get_connection()
 _CACHED_DATA = _query_snowflake(_startup_conn)
 _startup_conn.close()
@@ -176,22 +283,28 @@ _CACHE_STATUS = {'warmup_started': None, 'warmup_finished': None, 'last_refresh'
 
 def _warm_cache():
     from datetime import datetime
-    data = _CACHED_DATA or []
-    accts = sorted(set(str(r['ACCOUNT_NUMBER']) for r in data))
     _CACHE_STATUS['warmup_started'] = datetime.now().isoformat()
     _CACHE_STATUS['warmup_in_progress'] = True
-    loaded = 0
-    for acct in accts:
-        if acct not in _CUSTOMER_DETAIL_CACHE:
-            try:
-                _CUSTOMER_DETAIL_CACHE[acct] = _query_single_customer(acct)
-                loaded += 1
-            except Exception as e:
-                print(f"Cache warmup: failed for {acct}: {e}")
+    try:
+        bulk = _query_all_customer_details()
+        _CUSTOMER_DETAIL_CACHE.update(bulk)
+        print(f"Cache warmup: loaded {len(bulk)} accounts via bulk query")
+    except Exception as e:
+        print(f"Cache warmup bulk failed, falling back to sequential: {e}")
+        data = _CACHED_DATA or []
+        accts = sorted(set(str(r['ACCOUNT_NUMBER']) for r in data))
+        loaded = 0
+        for acct in accts:
+            if acct not in _CUSTOMER_DETAIL_CACHE:
+                try:
+                    _CUSTOMER_DETAIL_CACHE[acct] = _query_single_customer(acct)
+                    loaded += 1
+                except Exception as ex:
+                    print(f"Cache warmup: failed for {acct}: {ex}")
+        print(f"Cache warmup fallback: loaded {loaded} new accounts ({len(accts)} total)")
     _CACHE_STATUS['warmup_finished'] = datetime.now().isoformat()
     _CACHE_STATUS['warmup_in_progress'] = False
     _CACHE_STATUS['last_refresh'] = datetime.now().isoformat()
-    print(f"Cache warmup: loaded {loaded} new accounts ({len(accts)} total)")
 
 def _background_refresh():
     global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
