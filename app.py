@@ -2,7 +2,7 @@ from fasthtml.common import *
 from starlette.responses import RedirectResponse, Response
 import snowflake.connector
 from datetime import date
-import os, json, io
+import os, json, io, threading, time
 
 # ---------------------------------------------------------------------------
 # Data layer
@@ -172,6 +172,35 @@ print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
 
 # On-demand cache for customer detail (keyed by account number)
 _CUSTOMER_DETAIL_CACHE = {}
+
+def _warm_cache():
+    data = _CACHED_DATA or []
+    accts = sorted(set(str(r['ACCOUNT_NUMBER']) for r in data))
+    loaded = 0
+    for acct in accts:
+        if acct not in _CUSTOMER_DETAIL_CACHE:
+            try:
+                _CUSTOMER_DETAIL_CACHE[acct] = _query_single_customer(acct)
+                loaded += 1
+            except Exception as e:
+                print(f"Cache warmup: failed for {acct}: {e}")
+    print(f"Cache warmup: loaded {loaded} new accounts ({len(accts)} total)")
+
+def _background_refresh():
+    global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
+    _warm_cache()
+    while True:
+        time.sleep(3600)
+        try:
+            print("Hourly refresh: reloading data...")
+            _CACHED_DATA = _query_snowflake()
+            _CUSTOMER_DETAIL_CACHE = {}
+            _warm_cache()
+            print(f"Hourly refresh: done. {len(_CACHED_DATA)} invoices.")
+        except Exception as e:
+            print(f"Hourly refresh failed: {e}")
+
+threading.Thread(target=_background_refresh, daemon=True).start()
 
 # Load notes from CSV export
 _NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'notes_data.json')
@@ -1265,7 +1294,7 @@ app, rt = fast_app(
         Script(JS),
     ],
     pico=False,
-    live=True,
+    live=os.environ.get("LIVE_RELOAD", "false").lower() == "true",
     title="AR Aging",
 )
 
@@ -1835,6 +1864,159 @@ async def save_promise(invoice_num: str, request):
     return Response(content="ok")
 
 
+@rt("/diagram")
+def diagram_page():
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AR Aging - Architecture Diagram</title>
+<link rel="icon" href="/favicon.ico" type="image/x-icon">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Spectral:wght@600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0f1117; color: #e4e6f0; font-family: 'Poppins', sans-serif; padding: 32px; }
+.header { text-align: center; margin-bottom: 32px; }
+.header h1 { font-family: 'Spectral', Georgia, serif; font-size: 28px; font-weight: 600; color: #e4e6f0; }
+.header p { font-size: 13px; color: #8b8fa3; margin-top: 4px; }
+.diagram-wrap { max-width: 960px; margin: 0 auto; background: #1a1d27; border: 1px solid #2e3348; border-radius: 12px; padding: 24px; overflow-x: auto; }
+.back { display: inline-block; margin-bottom: 16px; color: #6c8cff; text-decoration: none; font-size: 13px; }
+.back:hover { text-decoration: underline; }
+svg text { font-family: 'Poppins', sans-serif; }
+</style>
+</head>
+<body>
+<a href="/" class="back">&larr; Back to AR Aging</a>
+<div class="header">
+<h1>AR Aging Architecture</h1>
+<p>Data flow from source systems through Snowflake to the Collections UI</p>
+</div>
+<div class="diagram-wrap">
+<svg viewBox="0 0 880 520" role="img" aria-labelledby="diag-title diag-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="diag-title">AR Aging Architecture Diagram</title>
+<desc id="diag-desc">Data flow from NetSuite and Salesforce through Fivetran and Snowflake to the AR Collections FastHTML app on Cloud Run</desc>
+<defs>
+<marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#8b8fa3"/></marker>
+<marker id="arr-a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#005a72"/></marker>
+<marker id="arr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3dd68c"/></marker>
+</defs>
+
+<!-- Background -->
+<rect width="880" height="520" rx="0" fill="#1a1d27"/>
+
+<!-- Source Systems zone -->
+<rect x="20" y="60" width="180" height="200" rx="8" fill="rgba(108,140,255,0.04)" stroke="rgba(108,140,255,0.2)" stroke-dasharray="4,3"/>
+<text x="110" y="84" text-anchor="middle" fill="#6c8cff" font-size="9" font-weight="600" letter-spacing="0.1em">SOURCE SYSTEMS</text>
+
+<!-- NetSuite -->
+<rect x="40" y="100" width="140" height="48" rx="6" fill="#1a1d27"/>
+<rect x="40" y="100" width="140" height="48" rx="6" fill="rgba(245,197,66,0.08)" stroke="#f5c542" stroke-width="1"/>
+<text x="110" y="128" text-anchor="middle" fill="#e4e6f0" font-size="12" font-weight="600">NetSuite</text>
+
+<!-- Salesforce -->
+<rect x="40" y="168" width="140" height="48" rx="6" fill="#1a1d27"/>
+<rect x="40" y="168" width="140" height="48" rx="6" fill="rgba(108,140,255,0.08)" stroke="#6c8cff" stroke-width="1"/>
+<text x="110" y="196" text-anchor="middle" fill="#e4e6f0" font-size="12" font-weight="600">Salesforce</text>
+
+<!-- Fivetran -->
+<rect x="260" y="120" width="140" height="56" rx="6" fill="#1a1d27"/>
+<rect x="260" y="120" width="140" height="56" rx="6" fill="rgba(61,214,140,0.08)" stroke="#3dd68c" stroke-width="1"/>
+<text x="330" y="146" text-anchor="middle" fill="#e4e6f0" font-size="12" font-weight="600">Fivetran</text>
+<text x="330" y="162" text-anchor="middle" fill="#8b8fa3" font-size="9">CDC Sync</text>
+
+<!-- Arrows: Sources -> Fivetran -->
+<path d="M180,124 L240,124 Q248,124 248,132 L248,148 Q248,148 260,148" fill="none" stroke="#8b8fa3" stroke-width="1" marker-end="url(#arr)"/>
+<path d="M180,192 L240,192 Q248,192 248,184 L248,148 Q248,148 260,148" fill="none" stroke="#8b8fa3" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Snowflake zone -->
+<rect x="460" y="40" width="200" height="260" rx="8" fill="rgba(0,90,114,0.06)" stroke="rgba(0,90,114,0.3)" stroke-dasharray="4,3"/>
+<text x="560" y="64" text-anchor="middle" fill="#2c8798" font-size="9" font-weight="600" letter-spacing="0.1em">SNOWFLAKE</text>
+
+<!-- FIVETRAN_DB -->
+<rect x="480" y="80" width="160" height="48" rx="6" fill="#1a1d27"/>
+<rect x="480" y="80" width="160" height="48" rx="6" fill="rgba(0,90,114,0.12)" stroke="#005a72" stroke-width="1"/>
+<text x="560" y="104" text-anchor="middle" fill="#e4e6f0" font-size="11" font-weight="600">FIVETRAN_DB</text>
+<text x="560" y="118" text-anchor="middle" fill="#8b8fa3" font-size="8">Transactions, Customers</text>
+
+<!-- ANALYTICS_PROD -->
+<rect x="480" y="148" width="160" height="48" rx="6" fill="#1a1d27"/>
+<rect x="480" y="148" width="160" height="48" rx="6" fill="rgba(0,90,114,0.12)" stroke="#005a72" stroke-width="1"/>
+<text x="560" y="172" text-anchor="middle" fill="#e4e6f0" font-size="11" font-weight="600">ANALYTICS_PROD</text>
+<text x="560" y="186" text-anchor="middle" fill="#8b8fa3" font-size="8">BI_GTM.SRC_SF_ACCOUNT</text>
+
+<!-- BILLING_PIPE WH -->
+<rect x="480" y="216" width="160" height="40" rx="6" fill="#1a1d27"/>
+<rect x="480" y="216" width="160" height="40" rx="6" fill="rgba(245,197,66,0.06)" stroke="rgba(245,197,66,0.3)" stroke-width="1"/>
+<text x="560" y="240" text-anchor="middle" fill="#f5c542" font-size="10" font-weight="500">BILLING_PIPE (WH)</text>
+
+<!-- Fivetran -> Snowflake -->
+<line x1="400" y1="148" x2="480" y2="104" stroke="#3dd68c" stroke-width="1" marker-end="url(#arr-g)"/>
+
+<!-- App zone -->
+<rect x="260" y="340" width="400" height="160" rx="8" fill="rgba(0,90,114,0.04)" stroke="rgba(0,90,114,0.2)" stroke-dasharray="4,3"/>
+<text x="460" y="364" text-anchor="middle" fill="#2c8798" font-size="9" font-weight="600" letter-spacing="0.1em">GOOGLE CLOUD RUN</text>
+
+<!-- FastHTML App -->
+<rect x="300" y="380" width="160" height="56" rx="6" fill="#1a1d27"/>
+<rect x="300" y="380" width="160" height="56" rx="6" fill="rgba(0,90,114,0.15)" stroke="#005a72" stroke-width="1.2"/>
+<text x="380" y="406" text-anchor="middle" fill="#e4e6f0" font-size="12" font-weight="700">FastHTML App</text>
+<text x="380" y="422" text-anchor="middle" fill="#8b8fa3" font-size="9">app.py | Port 5099</text>
+
+<!-- Cache -->
+<rect x="500" y="384" width="120" height="48" rx="6" fill="#1a1d27"/>
+<rect x="500" y="384" width="120" height="48" rx="6" fill="rgba(61,214,140,0.06)" stroke="rgba(61,214,140,0.3)" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="560" y="408" text-anchor="middle" fill="#3dd68c" font-size="10" font-weight="500">In-Memory Cache</text>
+<text x="560" y="420" text-anchor="middle" fill="#8b8fa3" font-size="8">Hourly refresh</text>
+
+<!-- Snowflake -> App -->
+<path d="M560,300 L560,340" fill="none" stroke="#005a72" stroke-width="1.2" marker-end="url(#arr-a)"/>
+<rect x="532" y="310" width="56" height="14" rx="2" fill="#1a1d27"/>
+<text x="560" y="320" text-anchor="middle" fill="#8b8fa3" font-size="8" letter-spacing="0.06em">QUERIES</text>
+
+<!-- App -> Cache -->
+<line x1="460" y1="408" x2="500" y2="408" stroke="rgba(61,214,140,0.5)" stroke-width="1" marker-end="url(#arr-g)"/>
+
+<!-- GitHub Actions -->
+<rect x="720" y="380" width="140" height="56" rx="6" fill="#1a1d27"/>
+<rect x="720" y="380" width="140" height="56" rx="6" fill="rgba(108,140,255,0.06)" stroke="rgba(108,140,255,0.3)" stroke-width="1"/>
+<text x="790" y="406" text-anchor="middle" fill="#e4e6f0" font-size="11" font-weight="600">GitHub Actions</text>
+<text x="790" y="420" text-anchor="middle" fill="#8b8fa3" font-size="8">CI/CD Deploy</text>
+
+<!-- GitHub -> Cloud Run -->
+<path d="M720,408 Q680,408 680,440 Q680,460 660,460" fill="none" stroke="rgba(108,140,255,0.4)" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+
+<!-- Browser -->
+<rect x="40" y="380" width="140" height="56" rx="6" fill="#1a1d27"/>
+<rect x="40" y="380" width="140" height="56" rx="6" fill="rgba(213,255,159,0.08)" stroke="rgba(213,255,159,0.3)" stroke-width="1"/>
+<text x="110" y="406" text-anchor="middle" fill="#e4e6f0" font-size="12" font-weight="600">Browser</text>
+<text x="110" y="422" text-anchor="middle" fill="#8b8fa3" font-size="9">Collections Team</text>
+
+<!-- Browser -> App -->
+<line x1="180" y1="408" x2="300" y2="408" stroke="#005a72" stroke-width="1.2" marker-end="url(#arr-a)"/>
+<rect x="212" y="394" width="56" height="14" rx="2" fill="#1a1d27"/>
+<text x="240" y="404" text-anchor="middle" fill="#8b8fa3" font-size="8" letter-spacing="0.06em">HTTPS</text>
+
+<!-- Legend -->
+<line x1="20" y1="490" x2="860" y2="490" stroke="rgba(139,143,163,0.15)" stroke-width="0.8"/>
+<text x="40" y="510" fill="#8b8fa3" font-size="8" letter-spacing="0.1em">LEGEND</text>
+<line x1="100" y1="507" x2="130" y2="507" stroke="#f5c542" stroke-width="1.2"/>
+<text x="136" y="510" fill="#8b8fa3" font-size="9">NetSuite</text>
+<line x1="200" y1="507" x2="230" y2="507" stroke="#6c8cff" stroke-width="1.2"/>
+<text x="236" y="510" fill="#8b8fa3" font-size="9">Salesforce</text>
+<line x1="310" y1="507" x2="340" y2="507" stroke="#005a72" stroke-width="1.2"/>
+<text x="346" y="510" fill="#8b8fa3" font-size="9">Snowflake</text>
+<line x1="420" y1="507" x2="450" y2="507" stroke="#3dd68c" stroke-width="1.2"/>
+<text x="456" y="510" fill="#8b8fa3" font-size="9">Fivetran / Cache</text>
+<line x1="560" y1="507" x2="590" y2="507" stroke="rgba(108,140,255,0.5)" stroke-width="1.2" stroke-dasharray="4,3"/>
+<text x="596" y="510" fill="#8b8fa3" font-size="9">CI/CD</text>
+</svg>
+</div>
+</body>
+</html>"""
+    return Response(content=html, media_type="text/html")
+
+
 @rt("/favicon.ico")
 def favicon():
     fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'favicon.ico')
@@ -1847,6 +2029,7 @@ def refresh_data():
     global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
     _CACHED_DATA = _query_snowflake()
     _CUSTOMER_DETAIL_CACHE = {}
+    threading.Thread(target=_warm_cache, daemon=True).start()
     return RedirectResponse("/", status_code=303)
 
 
