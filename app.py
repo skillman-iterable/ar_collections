@@ -1142,7 +1142,8 @@ function loadDiagnostics() {
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Collection Notes</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.notes_count + '</td></tr>' +
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Resolution Categories Set</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.resolution_count + '</td></tr>' +
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Promise to Pay Flags</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.ptp_count + '</td></tr>' +
-                '<tr style="border-top:1px solid var(--border);"><td style="padding:6px 0;color:var(--text-muted);">Warmup Started</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.warmup_started || '—') + '</td></tr>' +
+                '<tr style="border-top:1px solid var(--border);"><td style="padding:6px 0;color:var(--text-muted);">Warmup Duration</td><td style="text-align:right;color:var(--green);font-weight:600;font-size:12px;">' + (d.warmup_duration || '—') + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Warmup Started</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.warmup_started || '—') + '</td></tr>' +
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Warmup Finished</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.warmup_finished || '—') + '</td></tr>' +
                 '<tr><td style="padding:6px 0;color:var(--text-muted);">Last Refresh</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.last_refresh || '—') + '</td></tr>' +
                 '</table>';
@@ -2051,9 +2052,30 @@ def diagram_page():
 
 @rt("/diagnostics")
 def diagnostics():
+    from datetime import datetime, timezone, timedelta
+    pst = timezone(timedelta(hours=-7))
+    def _fmt(iso_str):
+        if not iso_str: return None
+        dt = datetime.fromisoformat(iso_str).replace(tzinfo=timezone.utc).astimezone(pst)
+        return dt.strftime('%b %d, %Y %I:%M:%S %p PST')
     data = _CACHED_DATA or []
     total_accts = len(set(str(r['ACCOUNT_NUMBER']) for r in data))
     cached_accts = len(_CUSTOMER_DETAIL_CACHE)
+    started = _CACHE_STATUS.get('warmup_started')
+    finished = _CACHE_STATUS.get('warmup_finished')
+    duration = None
+    if started and finished:
+        s = datetime.fromisoformat(started)
+        e = datetime.fromisoformat(finished)
+        total_secs = (e - s).total_seconds()
+        mins = int(total_secs // 60)
+        secs = total_secs % 60
+        duration = f"{mins}m {secs:.1f}s" if mins else f"{secs:.1f}s"
+    elif started and _CACHE_STATUS.get('warmup_in_progress'):
+        elapsed = (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+        mins = int(elapsed // 60)
+        secs = elapsed % 60
+        duration = f"{mins}m {secs:.1f}s (in progress)" if mins else f"{secs:.1f}s (in progress)"
     return Response(
         content=json.dumps({
             'invoices_loaded': len(data),
@@ -2061,9 +2083,10 @@ def diagnostics():
             'cached_accounts': cached_accts,
             'cache_pct': round(cached_accts / total_accts * 100, 1) if total_accts else 0,
             'warmup_in_progress': _CACHE_STATUS.get('warmup_in_progress', False),
-            'warmup_started': _CACHE_STATUS.get('warmup_started'),
-            'warmup_finished': _CACHE_STATUS.get('warmup_finished'),
-            'last_refresh': _CACHE_STATUS.get('last_refresh'),
+            'warmup_started': _fmt(started),
+            'warmup_finished': _fmt(finished),
+            'warmup_duration': duration,
+            'last_refresh': _fmt(_CACHE_STATUS.get('last_refresh')),
             'notes_count': len([k for k in _NOTES if not k.startswith('res_') and not k.startswith('ptp_')]),
             'resolution_count': len([k for k in _NOTES if k.startswith('res_')]),
             'ptp_count': len([k for k in _NOTES if k.startswith('ptp_')]),
