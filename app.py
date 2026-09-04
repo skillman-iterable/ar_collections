@@ -172,10 +172,14 @@ print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
 
 # On-demand cache for customer detail (keyed by account number)
 _CUSTOMER_DETAIL_CACHE = {}
+_CACHE_STATUS = {'warmup_started': None, 'warmup_finished': None, 'last_refresh': None, 'warmup_in_progress': False}
 
 def _warm_cache():
+    from datetime import datetime
     data = _CACHED_DATA or []
     accts = sorted(set(str(r['ACCOUNT_NUMBER']) for r in data))
+    _CACHE_STATUS['warmup_started'] = datetime.now().isoformat()
+    _CACHE_STATUS['warmup_in_progress'] = True
     loaded = 0
     for acct in accts:
         if acct not in _CUSTOMER_DETAIL_CACHE:
@@ -184,6 +188,9 @@ def _warm_cache():
                 loaded += 1
             except Exception as e:
                 print(f"Cache warmup: failed for {acct}: {e}")
+    _CACHE_STATUS['warmup_finished'] = datetime.now().isoformat()
+    _CACHE_STATUS['warmup_in_progress'] = False
+    _CACHE_STATUS['last_refresh'] = datetime.now().isoformat()
     print(f"Cache warmup: loaded {loaded} new accounts ({len(accts)} total)")
 
 def _background_refresh():
@@ -991,6 +998,39 @@ function openHelp() {
 function closeHelp() {
     document.getElementById('ee-overlay').classList.remove('open');
 }
+
+function loadDiagnostics() {
+    var el = document.getElementById('diag-content');
+    el.innerHTML = '<span style="color:var(--text-muted)">Loading...</span>';
+    fetch('/diagnostics')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var pct = d.cache_pct;
+            var barColor = pct >= 100 ? 'var(--green)' : pct > 50 ? 'var(--yellow)' : 'var(--red)';
+            var status = d.warmup_in_progress ? '<span style="color:var(--yellow)">Warming up...</span>' : (pct >= 100 ? '<span style="color:var(--green)">Ready</span>' : '<span style="color:var(--orange)">Partial</span>');
+            el.innerHTML =
+                '<div style="margin-bottom:16px;">' +
+                '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Cache Status</div>' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+                '<div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;">' +
+                '<div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:4px;transition:width 0.3s;"></div></div>' +
+                '<span style="font-size:12px;font-weight:600;color:var(--text);">' + pct + '%</span>' +
+                '</div>' +
+                '<div style="font-size:12px;">' + status + ' &mdash; ' + d.cached_accounts + ' / ' + d.total_accounts + ' accounts cached</div>' +
+                '</div>' +
+                '<table style="width:100%;font-size:12px;border-collapse:collapse;">' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Invoices Loaded</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.invoices_loaded + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Distinct Accounts</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.total_accounts + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Accounts Cached</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.cached_accounts + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Collection Notes</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.notes_count + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Resolution Categories Set</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.resolution_count + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Promise to Pay Flags</td><td style="text-align:right;color:var(--text);font-weight:500;">' + d.ptp_count + '</td></tr>' +
+                '<tr style="border-top:1px solid var(--border);"><td style="padding:6px 0;color:var(--text-muted);">Warmup Started</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.warmup_started || '—') + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Warmup Finished</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.warmup_finished || '—') + '</td></tr>' +
+                '<tr><td style="padding:6px 0;color:var(--text-muted);">Last Refresh</td><td style="text-align:right;color:var(--text);font-size:11px;">' + (d.last_refresh || '—') + '</td></tr>' +
+                '</table>';
+        });
+}
 function switchEETab(tab) {
     document.querySelectorAll('.ee-tab').forEach(function(t) { t.classList.remove('active'); });
     document.querySelectorAll('.ee-panel').forEach(function(p) { p.classList.remove('active'); });
@@ -1767,6 +1807,7 @@ def get():
                     Button("Data Platform Integration", cls="ee-tab active", data_tab="integration", onclick="switchEETab('integration')"),
                     Button("Data Flow", cls="ee-tab", data_tab="dataflow", onclick="switchEETab('dataflow')"),
                     Button("How to Use", cls="ee-tab", data_tab="guide", onclick="switchEETab('guide')"),
+                    Button("Diagnostics", cls="ee-tab", data_tab="diagnostics", onclick="switchEETab('diagnostics');loadDiagnostics()"),
                     cls="ee-tabs"
                 ),
                 Div(
@@ -1827,6 +1868,16 @@ def get():
                         ),
                         id="ee-guide", cls="ee-panel"
                     ),
+                    # Tab 4: Diagnostics
+                    Div(
+                        Div(
+                            H3("System Diagnostics"),
+                            Div(id="diag-content", style="font-size:13px;color:var(--text-muted);padding:8px 0;"),
+                            Button("Refresh", cls="notes-btn primary", onclick="loadDiagnostics()", style="margin-top:12px;"),
+                            cls="ee-walkthrough"
+                        ),
+                        id="ee-diagnostics", cls="ee-panel"
+                    ),
                     cls="ee-content"
                 ),
                 cls="ee-modal"
@@ -1871,6 +1922,29 @@ def diagram_page():
         return Response(content=f.read(), media_type="text/html")
 
 
+@rt("/diagnostics")
+def diagnostics():
+    data = _CACHED_DATA or []
+    total_accts = len(set(str(r['ACCOUNT_NUMBER']) for r in data))
+    cached_accts = len(_CUSTOMER_DETAIL_CACHE)
+    return Response(
+        content=json.dumps({
+            'invoices_loaded': len(data),
+            'total_accounts': total_accts,
+            'cached_accounts': cached_accts,
+            'cache_pct': round(cached_accts / total_accts * 100, 1) if total_accts else 0,
+            'warmup_in_progress': _CACHE_STATUS.get('warmup_in_progress', False),
+            'warmup_started': _CACHE_STATUS.get('warmup_started'),
+            'warmup_finished': _CACHE_STATUS.get('warmup_finished'),
+            'last_refresh': _CACHE_STATUS.get('last_refresh'),
+            'notes_count': len([k for k in _NOTES if not k.startswith('res_') and not k.startswith('ptp_')]),
+            'resolution_count': len([k for k in _NOTES if k.startswith('res_')]),
+            'ptp_count': len([k for k in _NOTES if k.startswith('ptp_')]),
+        }, indent=2),
+        media_type="application/json"
+    )
+
+
 @rt("/favicon.ico")
 def favicon():
     fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'favicon.ico')
@@ -1895,19 +1969,12 @@ def export_data(fmt: str):
                "Resolution Category", "Account Owner", "CSM", "CSM Manager", "AE", "CAM",
                "Market Segment", "Subsidiary", "Category", "Payment Method", "Customer Bank"]
     rows = []
-    # Build account-level enrichment — fetch any not already cached
+    # Build account-level enrichment — use cached data only (no blocking fetches)
     acct_detail_cache = {}
     for r in data:
         acct = str(r.get('ACCOUNT_NUMBER', ''))
         if acct not in acct_detail_cache:
-            d = _CUSTOMER_DETAIL_CACHE.get(acct)
-            if d is None:
-                try:
-                    d = _query_single_customer(acct)
-                    _CUSTOMER_DETAIL_CACHE[acct] = d
-                except Exception:
-                    d = {}
-            acct_detail_cache[acct] = d
+            acct_detail_cache[acct] = _CUSTOMER_DETAIL_CACHE.get(acct, {})
         d = acct_detail_cache[acct]
         inv_num = str(r.get('INVOICE_NUMBER', ''))
         rows.append([
