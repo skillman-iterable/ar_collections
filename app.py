@@ -349,12 +349,46 @@ body {
     background: var(--bg) !important; color: var(--text) !important; line-height: 1.5;
 }
 .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
-.app-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 16px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
+.ar-hero {
+    position: relative; color: #fff;
+    background: radial-gradient(ellipse 70% 80% at 85% 20%, rgba(45,212,191,0.22), transparent 55%),
+                linear-gradient(115deg, #0b2f3a 0%, #005A72 48%, #0a7a8f 100%);
+    padding: 1.35rem 1.5rem 1.5rem; margin: 0 0 0; overflow: hidden;
 }
-.app-header h1 { font-size: 20px; font-weight: 600; color: var(--text); }
-.app-header .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+.ar-hero::after {
+    content: ""; position: absolute; inset: auto 0 0 0; height: 1.25rem;
+    background: linear-gradient(180deg, transparent, var(--bg)); pointer-events: none;
+}
+.ar-hero-inner { max-width: 96rem; margin: 0 auto; }
+.ar-hero-top {
+    display: flex; flex-wrap: wrap; align-items: flex-start;
+    justify-content: space-between; gap: 0.75rem 1.25rem;
+}
+.ar-brand-logo { display: block; width: 10.5rem; height: auto; max-width: 48vw; object-fit: contain; }
+.ar-hero-kicker {
+    margin: 0.65rem 0 0; font-size: 0.72rem; font-weight: 650;
+    letter-spacing: 0.08em; text-transform: uppercase; color: #c8f5df;
+}
+.ar-hero-title {
+    margin: 0.35rem 0 0; font-size: clamp(1.55rem, 3vw, 2.05rem);
+    font-weight: 800; letter-spacing: -0.03em; line-height: 1.15;
+    color: #ffffff !important; text-shadow: 0 1px 1px rgba(0,0,0,0.14);
+}
+.ar-hero-meta {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.45rem 0.8rem; border-radius: 999px;
+    background: rgba(4,39,50,0.34); border: 1px solid rgba(255,255,255,0.24);
+    font-size: 0.8rem; font-weight: 650; color: #ffffff; white-space: nowrap;
+}
+.ar-hero-meta .live-dot {
+    width: 0.45rem; height: 0.45rem; border-radius: 999px;
+    background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.25);
+}
+.ar-hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
+.ar-hero-buttons { display: flex; align-items: center; gap: 8px; }
+.ar-hero-user { font-size: 11px; color: rgba(255,255,255,0.7); text-align: right; line-height: 1.4; }
+.ar-hero-user .user-name { font-weight: 600; color: #fff; font-size: 12px; }
+.app-header { display: none; }
 .header-right { text-align: right; display: flex; align-items: center; gap: 12px; }
 .header-user { font-size: 11px; color: var(--text-muted); text-align: right; line-height: 1.4; }
 .header-user .user-name { font-weight: 600; color: var(--text); font-size: 12px; }
@@ -732,16 +766,7 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 [data-theme="iterable"] body {
     font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
-[data-theme="iterable"] .app-header {
-    background: linear-gradient(135deg, #005a72 0%, #2c8798 100%);
-    border-bottom: 3px solid #d5ff9f;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.15);
-}
-[data-theme="iterable"] .app-header h1 { color: #ffffff; font-family: 'Spectral', Georgia, serif; font-weight: 600; }
-[data-theme="iterable"] .app-header .subtitle { color: rgba(255,255,255,0.75); }
-[data-theme="iterable"] .header-count { color: rgba(255,255,255,0.7); }
-[data-theme="iterable"] .header-total { color: #d5ff9f; }
-[data-theme="iterable"] .header-inv-amt { color: rgba(255,255,255,0.65); }
+[data-theme="iterable"] .ar-hero { display: block; }
 [data-theme="iterable"] .refresh-btn {
     background: rgba(255,255,255,0.15); color: #ffffff; border-color: rgba(255,255,255,0.3);
 }
@@ -1743,7 +1768,6 @@ def get_customer_detail(acct_num: str):
 @rt("/")
 def get(request: Request):
     data = _CACHED_DATA or []
-    today = date.today().strftime("%B %d, %Y")
 
     buckets = {'31-60': [], '61-90': [], '91-120': [], '120+': []}
     for r in data:
@@ -1774,31 +1798,51 @@ def get(request: Request):
             cls=cls, onclick=f"sortTable({idx})"
         )
 
+    user = session_user(request)
+    as_of = date.today().strftime("Data as of %b %-d, %Y")
+
     return Div(
-        # Header
+        # Hero Banner (matches UDI UAT pattern)
         Div(
             Div(
-                H1("AR Aging for Collections"),
-                Div(f"Live from NetSuite via Snowflake  \u00b7  {today}", cls="subtitle"),
-            ),
-            Div(
-                Span(f"{grand_count} invoices", cls="header-count", id="header-count"),
-                Span(
-                    Span(fm(grand_total), cls="header-total", id="header-total"),
-                    Span(f"Inv Amt: {fm(total_inv_amount)}", cls="header-inv-amt", id="header-inv-amt"),
-                    title=f"Balance Due: {fm(grand_total)}\nInvoice Amount: {fm(total_inv_amount)}",
-                ),
-                A("Refresh", href="/refresh", cls="refresh-btn"),
-                Button(Span("🌙", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch between Dark and Iterable themes"),
-                Button("?", cls="help-btn", onclick="openHelp()", title="About this report"),
                 Div(
-                    Div(session_user(request).name, cls="user-name") if session_user(request).name else "",
-                    Div(session_user(request).email, cls="user-email") if session_user(request).email else "",
-                    cls="header-user"
-                ) if session_user(request).email else "",
-                cls="header-right"
+                    Div(
+                        Div(
+                            Img(src="/iterable-logo-white.svg", alt="Iterable", width="172", height="26", cls="ar-brand-logo"),
+                        ),
+                        P("Collections \u00b7 AR Aging Report", cls="ar-hero-kicker"),
+                        H1("AR Aging for Collections", cls="ar-hero-title"),
+                    ),
+                    Div(
+                        Div(
+                            Span(cls="live-dot", aria_hidden="true"),
+                            Span(as_of, id="ar-as-of"),
+                            cls="ar-hero-meta",
+                        ),
+                        Div(
+                            Span(f"{grand_count} invoices", style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:8px;", id="header-count"),
+                            Span(fm(grand_total), style="color:#d5ff9f;font-size:18px;font-weight:700;", id="header-total"),
+                            Span(f"Inv Amt: {fm(total_inv_amount)}", style="color:rgba(255,255,255,0.6);font-size:11px;margin-left:6px;", id="header-inv-amt"),
+                            style="display:flex;align-items:center;gap:4px;margin-top:6px;",
+                        ),
+                        Div(
+                            A("Refresh", href="/refresh", cls="refresh-btn", style="background:rgba(255,255,255,0.15);color:#fff;border-color:rgba(255,255,255,0.3);"),
+                            Button(Span("\ud83c\udf19", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch themes", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
+                            Button("?", cls="help-btn", onclick="openHelp()", title="About this report", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
+                            style="display:flex;align-items:center;gap:8px;margin-top:8px;",
+                        ),
+                        Div(
+                            Div(user.name, cls="user-name") if user.name else "",
+                            Div(user.email, style="color:rgba(255,255,255,0.6);") if user.email else "",
+                            cls="ar-hero-user",
+                        ) if user.email else "",
+                        cls="ar-hero-actions",
+                    ),
+                    cls="ar-hero-top",
+                ),
+                cls="ar-hero-inner",
             ),
-            cls="app-header"
+            cls="ar-hero",
         ),
 
         Div(
@@ -2163,6 +2207,12 @@ def favicon():
     fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'favicon.ico')
     with open(fpath, 'rb') as f:
         return Response(content=f.read(), media_type="image/x-icon")
+
+@rt("/iterable-logo-white.svg")
+def logo():
+    fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'iterable-logo-white.svg')
+    with open(fpath, 'rb') as f:
+        return Response(content=f.read(), media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @rt("/refresh")
