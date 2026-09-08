@@ -1483,6 +1483,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Skip auth check if demo mode or local dev override is set
         if os.getenv("AR_USE_DEMO", "").lower() in ("1", "true", "yes") or os.getenv("AR_SESSION_EMAIL"):
             return await call_next(request)
+        # Only enforce auth when AR_REQUIRE_AUTH=1 (set after IAP is configured)
+        if os.getenv("AR_REQUIRE_AUTH", "").lower() not in ("1", "true", "yes"):
+            return await call_next(request)
         # Skip for open paths
         if request.url.path in self.OPEN_PATHS:
             return await call_next(request)
