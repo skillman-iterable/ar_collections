@@ -1827,7 +1827,7 @@ def get(request: Request):
                         ),
                         Div(
                             A("Refresh", href="/refresh", cls="refresh-btn", style="background:rgba(255,255,255,0.15);color:#fff;border-color:rgba(255,255,255,0.3);"),
-                            Button(Span("\ud83c\udf19", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch themes", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
+                            Button(Span("🌙", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch themes", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
                             Button("?", cls="help-btn", onclick="openHelp()", title="About this report", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
                             style="display:flex;align-items:center;gap:8px;margin-top:8px;",
                         ),
