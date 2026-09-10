@@ -175,6 +175,36 @@ class TestIterableTableScrollInChrome(unittest.TestCase):
         self.assertNotEqual(_attr(self.dom, "drawer-overflow"), "hidden")
 
 
+class TestCollectionsInteractionMarkup(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_hero_keeps_help_but_removes_refresh_theme_and_user(self):
+        self.assertIn('Button("?", cls="help-btn"', self.source)
+        self.assertNotIn('A("Refresh", href="/refresh"', self.source)
+        self.assertNotIn('cls="theme-toggle"', self.source)
+        self.assertNotIn('cls="ar-hero-user"', self.source)
+        self.assertNotIn("function toggleTheme()", self.source)
+        self.assertNotIn("localStorage.getItem('ar-theme')", self.source)
+
+    def test_invoice_row_opens_customer_drawer(self):
+        self.assertRegex(
+            self.source,
+            r"data_inv=r\['INVOICE_NUMBER'\],\s+"
+            r"onclick=f\"openDrawer\(",
+        )
+        self.assertIn('tabindex="0"', self.source)
+        self.assertIn("event.key === 'Enter'", self.source)
+
+    def test_notes_click_does_not_open_customer_drawer(self):
+        self.assertRegex(
+            self.source,
+            r"cls=\"notes-cell\",\s+onclick=f\"event\.stopPropagation\(\); "
+            r"openNotes\(",
+        )
+
+
 class TestLiveAppSmoke(unittest.TestCase):
     """Hits the deployed Cloud Run service. Skip with AR_E2E_LIVE=0."""
 

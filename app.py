@@ -386,8 +386,6 @@ body {
 }
 .ar-hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
 .ar-hero-buttons { display: flex; align-items: center; gap: 8px; }
-.ar-hero-user { font-size: 11px; color: rgba(255,255,255,0.7); text-align: right; line-height: 1.4; }
-.ar-hero-user .user-name { font-weight: 600; color: #fff; font-size: 12px; }
 .app-header { display: none; }
 .header-right { text-align: right; display: flex; align-items: center; gap: 12px; }
 .header-user { font-size: 11px; color: var(--text-muted); text-align: right; line-height: 1.4; }
@@ -396,13 +394,6 @@ body {
 .header-count { color: var(--text-muted); font-size: 13px; margin-right: 16px; }
 .header-total { font-size: 20px; font-weight: 700; color: var(--accent); display: inline; }
 .header-inv-amt { font-size: 11px; color: var(--text-muted); margin-left: 4px; display: inline; }
-.refresh-btn {
-    display: inline-block; margin-left: 16px; padding: 6px 14px;
-    background: var(--surface2); color: var(--accent); border: 1px solid var(--border);
-    border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 500;
-}
-.refresh-btn:hover { background: var(--border); }
-
 .metrics-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin: 24px 0; }
 .metric-card {
     background: var(--surface); border: 1px solid var(--border);
@@ -539,9 +530,11 @@ th.sorted .arrow { opacity: 1; color: var(--accent); }
 tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: var(--surface2); }
 tbody tr.selected { background: rgba(108,140,255,0.12); border-left: 3px solid var(--accent); }
+.invoice-row { cursor: pointer; }
+.invoice-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 td { padding: 10px 12px; white-space: nowrap; color: var(--text); }
 td.r { text-align: right; font-variant-numeric: tabular-nums; }
-td.cust { max-width: 240px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+td.cust { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 tfoot td {
     padding: 10px 12px; font-weight: 700; color: var(--accent);
     border-top: 2px solid var(--border); background: var(--surface2);
@@ -744,53 +737,68 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     font-size: 12px; color: var(--yellow);
 }
 
-/* Theme toggle */
-.theme-toggle {
-    display: inline-flex; align-items: center; gap: 6px;
-    margin-left: 12px; padding: 5px 12px; border-radius: 8px;
-    border: 1px solid var(--border); background: var(--surface2);
-    color: var(--text-muted); font-size: 12px; font-weight: 500;
-    cursor: pointer; transition: all 0.2s; vertical-align: middle;
-    font-family: inherit;
-}
-.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
-.theme-toggle .toggle-icon { font-size: 14px; }
-
 /* Iterable brand theme */
 [data-theme="iterable"] {
-    --bg: #ddd6cd; --surface: #ffffff; --surface2: #ede8e2;
-    --border: #c8bfb4; --text: #160f29; --text-muted: #5f6577;
+    --bg: #f3f8fa; --surface: #ffffff; --surface2: #f3f8fa;
+    --border: #c5d8de; --text: #0c2a33; --text-muted: #4a6670;
     --accent: #005a72; --green: #399d89; --yellow: #b8860b;
     --orange: #c76a15; --red: #cc2936;
 }
 [data-theme="iterable"] body {
-    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    background-color: var(--bg) !important;
+    background-image:
+        radial-gradient(ellipse 90% 60% at 0% 0%, rgba(0,90,114,0.07), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 100% 10%, rgba(10,122,143,0.06), transparent 50%),
+        radial-gradient(ellipse 80% 40% at 50% 100%, rgba(0,90,114,0.04), transparent 55%),
+        linear-gradient(180deg, #f7fbfd 0%, #eef5f7 100%),
+        repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(0,90,114,0.03) 23px, rgba(0,90,114,0.03) 24px),
+        repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(0,90,114,0.03) 23px, rgba(0,90,114,0.03) 24px);
+    background-attachment: fixed;
 }
 [data-theme="iterable"] .ar-hero { display: block; }
-[data-theme="iterable"] .refresh-btn {
-    background: rgba(255,255,255,0.15); color: #ffffff; border-color: rgba(255,255,255,0.3);
+[data-theme="iterable"] .ar-hero {
+    padding: 1.35rem 1.5rem 2.25rem;
+    margin-bottom: 1.25rem;
 }
-[data-theme="iterable"] .refresh-btn:hover { background: rgba(255,255,255,0.25); }
+[data-theme="iterable"] .ar-hero::after { background: linear-gradient(180deg, transparent, var(--bg)); }
+[data-theme="iterable"] .container {
+    max-width: 96rem; padding: 0.85rem 1.25rem 2.5rem;
+}
 [data-theme="iterable"] .help-btn {
     background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); border-color: rgba(255,255,255,0.3);
 }
 [data-theme="iterable"] .help-btn:hover { color: #ffffff; border-color: #ffffff; background: rgba(255,255,255,0.25); }
-[data-theme="iterable"] .theme-toggle {
-    background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); border-color: rgba(255,255,255,0.3);
-}
-[data-theme="iterable"] .theme-toggle:hover { color: #ffffff; border-color: #ffffff; }
 
 /* Iterable metric cards */
-[data-theme="iterable"] .metric-card { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 12px; }
-[data-theme="iterable"] .metric-card:hover { border-color: #2c8798; }
+[data-theme="iterable"] .metrics-row {
+    gap: 0.75rem; margin: 0 0 1.25rem; padding: 1.35rem;
+    border: 1px solid var(--border); border-radius: 1.35rem;
+    background: #fff; box-shadow: 0 8px 28px rgba(12,42,51,0.06);
+}
+[data-theme="iterable"] .metric-card {
+    min-height: 7.25rem; padding: 1.15rem 1.25rem 1.2rem;
+    border-radius: 0.9rem; box-shadow: none;
+}
+[data-theme="iterable"] .metric-card:hover {
+    border-color: #2c8798; transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(12,42,51,0.08);
+}
 [data-theme="iterable"] .metric-card.active { border-color: #2c8798; box-shadow: 0 0 0 2px #2c8798; }
+[data-theme="iterable"] .c-total { background: #fff; border-color: var(--border); }
+[data-theme="iterable"] .c-31 { background: linear-gradient(150deg, #fef3c7 0%, #fefce8 60%, #fffbeb 100%); border-color: #fcd34d; }
+[data-theme="iterable"] .c-61 { background: linear-gradient(150deg, #ffedd5 0%, #fff7ed 60%, #fffbeb 100%); border-color: #fdba74; }
+[data-theme="iterable"] .c-91,
+[data-theme="iterable"] .c-120 { background: linear-gradient(150deg, #fee2e2 0%, #fef2f2 60%, #fff1f2 100%); border-color: #fca5a5; }
 [data-theme="iterable"] .c-total .value { color: #005a72; }
 [data-theme="iterable"] .c-31 .value { color: #b8860b; }
 [data-theme="iterable"] .c-61 .value { color: #c76a15; }
 [data-theme="iterable"] .c-91 .value { color: #cc2936; }
 [data-theme="iterable"] .c-120 .value { color: #a01a28; }
-[data-theme="iterable"] .metric-card .label { color: #005a72; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
-[data-theme="iterable"] .metric-card .value { font-family: 'Spectral', Georgia, serif; font-size: 28px; }
+[data-theme="iterable"] .metric-card .label { color: var(--text-muted); font-weight: 750; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.09em; }
+[data-theme="iterable"] .metric-card .value { font-family: inherit; font-size: 1.65rem; font-weight: 800; letter-spacing: -0.035em; }
+[data-theme="iterable"] .metric-card .sub { color: var(--text-muted); font-size: 0.8rem; font-weight: 550; }
 
 /* Iterable badges */
 [data-theme="iterable"] .b-31  { background: rgba(184,134,11,0.12); color: #8b6914; }
@@ -799,15 +807,25 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 [data-theme="iterable"] .b-120 { background: rgba(160,26,40,0.12); color: #7d1420; }
 
 /* Iterable panels and table */
-[data-theme="iterable"] .panel { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 12px; }
-[data-theme="iterable"] .panel h3 { color: #005a72; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; }
-[data-theme="iterable"] .table-wrap { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 12px; }
-[data-theme="iterable"] th { background: #1a5c6e !important; color: #ffffff !important; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+[data-theme="iterable"] .panels { gap: 0.75rem; margin-bottom: 1rem; }
+[data-theme="iterable"] .panel {
+    padding: 1.25rem; border-radius: 1rem;
+    box-shadow: 0 4px 18px rgba(12,42,51,0.04);
+    min-width: 0; overflow: hidden;
+}
+[data-theme="iterable"] .panel h3 { color: var(--text); font-weight: 750; text-transform: none; font-size: 1rem; letter-spacing: -0.01em; }
+[data-theme="iterable"] .table-wrap {
+    border-radius: 1rem; border-left: 4px solid var(--accent);
+    box-shadow: 0 4px 18px rgba(12,42,51,0.04);
+}
+[data-theme="iterable"] th { background: #005a72 !important; color: #ffffff !important; padding: 0.75rem 1rem; font-weight: 600; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.04em; }
 [data-theme="iterable"] th:hover { color: #d5ff9f !important; }
 [data-theme="iterable"] th.sorted .arrow { color: #d5ff9f; }
-[data-theme="iterable"] tbody tr:hover { background: #f0ebe5; }
+[data-theme="iterable"] td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); background: #fff; }
+[data-theme="iterable"] tbody tr:nth-child(even) td { background: #f3f8fa; }
+[data-theme="iterable"] tbody tr:hover td { background: #d8eef2; }
 [data-theme="iterable"] tbody tr.selected { background: rgba(0,90,114,0.08); border-left: 3px solid #005a72; }
-[data-theme="iterable"] tfoot td { color: #ffffff; background: #1a5c6e; font-weight: 600; }
+[data-theme="iterable"] tfoot td { color: #ffffff; background: #005a72; font-weight: 600; }
 
 /* Iterable drawer and modals */
 [data-theme="iterable"] .drawer { box-shadow: -4px 0 24px rgba(0,0,0,0.12); }
@@ -824,14 +842,37 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 [data-theme="iterable"] .ee-walkthrough code { color: #b8860b; }
 
 /* Iterable filter bar */
-[data-theme="iterable"] .filter-bar input, [data-theme="iterable"] .filter-bar select {
-    background: #ffffff; border-color: #c8bfb4; border-radius: 8px;
+[data-theme="iterable"] .filter-bar {
+    gap: 0.65rem; padding: 0.95rem 1rem; margin: 0 0 1rem;
+    border: 1px solid var(--border); border-radius: 1rem;
+    background: #fff; box-shadow: 0 4px 16px rgba(12,42,51,0.04);
 }
-[data-theme="iterable"] .filter-bar input:focus, [data-theme="iterable"] .filter-bar select:focus { border-color: #005a72; }
-[data-theme="iterable"] .export-btn { background: #ffffff; border-color: #c8bfb4; }
+[data-theme="iterable"] .filter-bar input, [data-theme="iterable"] .filter-bar select {
+    background: #f7fbfd; border-color: var(--border); border-radius: 999px;
+    color: var(--text); padding: 0.55rem 0.9rem;
+}
+[data-theme="iterable"] .filter-bar input { flex: 1; }
+[data-theme="iterable"] .filter-bar input:focus, [data-theme="iterable"] .filter-bar select:focus { border-color: #005a72; box-shadow: 0 0 0 3px #d8eef2; }
+[data-theme="iterable"] .export-btn { background: #f7fbfd; border-color: var(--border); border-radius: 999px; padding: 0.55rem 0.9rem; }
 [data-theme="iterable"] .export-btn:hover { border-color: #005a72; color: #005a72; }
-[data-theme="iterable"] .export-menu { background: #ffffff; border-color: #c8bfb4; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
-[data-theme="iterable"] .export-menu a:hover { background: #f5f0eb; }
+[data-theme="iterable"] .export-menu { background: #ffffff; border-color: var(--border); box-shadow: 0 8px 24px rgba(12,42,51,0.12); }
+[data-theme="iterable"] .export-menu a:hover { background: #f3f8fa; }
+
+@media (max-width: 1050px) {
+    .metrics-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+    .panels { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+    .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ar-hero-actions { align-items: flex-start; }
+}
+@media (max-width: 520px) {
+    .container { padding-left: 0.75rem; padding-right: 0.75rem; }
+    .metrics-row { grid-template-columns: 1fr; padding: 1rem; }
+    .filter-bar input { min-width: 100%; }
+}
 
 /* Iterable scrollbar */
 [data-theme="iterable"] ::-webkit-scrollbar { width: 8px; }
@@ -1198,35 +1239,8 @@ function switchEETab(tab) {
     document.getElementById('ee-' + tab).classList.add('active');
 }
 
-// Theme toggle
-function toggleTheme() {
-    var html = document.documentElement;
-    var current = html.getAttribute('data-theme');
-    var icon = document.getElementById('theme-icon');
-    var label = document.getElementById('theme-label');
-    if (current === 'iterable') {
-        html.removeAttribute('data-theme');
-        if (icon) icon.textContent = '\\ud83c\\udf19';
-        if (label) label.textContent = 'Theme';
-        try { localStorage.setItem('ar-theme', 'dark'); } catch(e) {}
-    } else {
-        html.setAttribute('data-theme', 'iterable');
-        if (icon) icon.textContent = '\\u2600\\ufe0f';
-        if (label) label.textContent = 'Theme';
-        try { localStorage.setItem('ar-theme', 'iterable'); } catch(e) {}
-    }
-}
-
 document.addEventListener('DOMContentLoaded', function() {
-    // Restore saved theme
-    try {
-        var saved = localStorage.getItem('ar-theme');
-        if (saved === 'iterable') {
-            document.documentElement.setAttribute('data-theme', 'iterable');
-            var icon = document.getElementById('theme-icon');
-            if (icon) icon.textContent = '\\u2600\\ufe0f';
-        }
-    } catch(e) {}
+    document.documentElement.setAttribute('data-theme', 'iterable');
     updateTotals();
 });
 """
@@ -1798,7 +1812,6 @@ def get(request: Request):
             cls=cls, onclick=f"sortTable({idx})"
         )
 
-    user = session_user(request)
     as_of = date.today().strftime("Data as of %b %-d, %Y")
 
     return Div(
@@ -1826,16 +1839,9 @@ def get(request: Request):
                             style="display:flex;align-items:center;gap:4px;margin-top:6px;",
                         ),
                         Div(
-                            A("Refresh", href="/refresh", cls="refresh-btn", style="background:rgba(255,255,255,0.15);color:#fff;border-color:rgba(255,255,255,0.3);"),
-                            Button(Span("🌙", cls="toggle-icon", id="theme-icon"), Span("Theme", id="theme-label"), cls="theme-toggle", onclick="toggleTheme()", title="Switch themes", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
                             Button("?", cls="help-btn", onclick="openHelp()", title="About this report", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
                             style="display:flex;align-items:center;gap:8px;margin-top:8px;",
                         ),
-                        Div(
-                            Div(user.name, cls="user-name") if user.name else "",
-                            Div(user.email, style="color:rgba(255,255,255,0.6);") if user.email else "",
-                            cls="ar-hero-user",
-                        ) if user.email else "",
                         cls="ar-hero-actions",
                     ),
                     cls="ar-hero-top",
@@ -1937,8 +1943,7 @@ def get(request: Request):
                     Tbody(*[
                         Tr(
                             Td(str(r['ACCOUNT_NUMBER']), data_val=str(r['ACCOUNT_NUMBER'])),
-                            Td(str(r['CUSTOMER_NAME']), cls="cust",
-                               onclick=f"openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}', '{_esc(str(r['CUSTOMER_NAME']))}')"),
+                            Td(str(r['CUSTOMER_NAME']), cls="cust"),
                             Td(str(r['INVOICE_NUMBER'])),
                             Td(str(r['INVOICE_DATE']), data_val=str(r['INVOICE_DATE'])),
                             Td(fm(r['INVOICE_AMOUNT']), cls="r", data_val=str(r['INVOICE_AMOUNT'])),
@@ -1958,10 +1963,16 @@ def get(request: Request):
                                     cls="notes-icon" + (" has-notes" if _NOTES.get(r['INVOICE_NUMBER']) else ""),
                                 ),
                                 cls="notes-cell",
-                                onclick=f"openNotes('{r['INVOICE_NUMBER']}', '{_esc(str(r['CUSTOMER_NAME']))}')",
+                                onclick=f"event.stopPropagation(); openNotes('{r['INVOICE_NUMBER']}', '{_esc(str(r['CUSTOMER_NAME']))}')",
                             ),
                             data_bucket=r['AGING_BUCKET'],
-                            data_inv=r['INVOICE_NUMBER']
+                            data_inv=r['INVOICE_NUMBER'],
+                            onclick=f"openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}', '{_esc(str(r['CUSTOMER_NAME']))}')",
+                            onkeydown=f"if (event.key === 'Enter') openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}', '{_esc(str(r['CUSTOMER_NAME']))}')",
+                            cls="invoice-row",
+                            role="button",
+                            tabindex="0",
+                            aria_label=f"Open details for {str(r['CUSTOMER_NAME'])}",
                         ) for r in data
                     ]),
                     Tfoot(Tr(
