@@ -95,6 +95,36 @@ report("drawer", document.getElementById("customer-drawer"));
 """
 
 
+def loading_fixture_html(css: str) -> str:
+    return f"""<!DOCTYPE html>
+<html data-theme="iterable">
+<head><meta charset="utf-8"><style>{css}</style></head>
+<body>
+<main class="ar-loading-shell" id="ar-loading-shell" aria-busy="true">
+  <section class="loading-metrics">
+    <div class="loading-card"><span></span><span></span><span></span></div>
+    <div class="loading-card"><span></span><span></span><span></span></div>
+    <div class="loading-card"><span></span><span></span><span></span></div>
+  </section>
+  <section class="loading-stage">
+    <div class="loading-orbit"></div>
+    <strong>Loading accounts receivable</strong>
+    <p>Connecting to Snowflake and preparing collections data…</p>
+  </section>
+</main>
+<script>
+requestAnimationFrame(function () {{
+  document.body.setAttribute(
+    "data-animation-count",
+    String(document.getAnimations().length)
+  );
+}});
+</script>
+</body>
+</html>
+"""
+
+
 def chrome_dump(html: str) -> str:
     if not Path(CHROME).exists():
         raise unittest.SkipTest("Google Chrome is not installed")
@@ -173,6 +203,37 @@ class TestIterableTableScrollInChrome(unittest.TestCase):
     def test_customer_drawer_scrolls(self):
         self.assertEqual(_attr(self.dom, "drawer-result"), "PASS")
         self.assertNotEqual(_attr(self.dom, "drawer-overflow"), "hidden")
+
+
+class TestNonBlockingLoadingShell(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_snowflake_does_not_block_module_import(self):
+        self.assertNotIn("_startup_conn = _get_connection()", self.source)
+        self.assertIn("def _load_data_and_warm_cache()", self.source)
+        self.assertIn('@app.on_event("startup")', self.source)
+        self.assertRegex(
+            self.source,
+            r"threading\.Thread\(\s*target=_background_refresh,"
+        )
+        self.assertRegex(
+            self.source,
+            r"def _background_refresh\(\):\s+_load_data_and_warm_cache\(\)",
+        )
+
+    def test_loading_shell_is_accessible_and_polls_readiness(self):
+        self.assertIn('id="ar-loading-shell"', self.source)
+        self.assertIn('aria_busy="true"', self.source)
+        self.assertIn("data_ready", self.source)
+        self.assertIn("pollDataReady", self.source)
+        self.assertIn("window.location.reload()", self.source)
+
+    def test_loading_shell_animates_in_chrome(self):
+        dom = chrome_dump(loading_fixture_html(css_from_app()))
+        count = int(_attr(dom, "animation-count") or "0")
+        self.assertGreater(count, 0)
 
 
 class TestCollectionsInteractionMarkup(unittest.TestCase):

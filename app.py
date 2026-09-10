@@ -274,14 +274,20 @@ def _query_all_customer_details(conn=None):
     if own_conn: conn.close()
     return details_by_acct
 
-_startup_conn = _get_connection()
-_CACHED_DATA = _query_snowflake(_startup_conn)
-_startup_conn.close()
-print(f"Loaded {len(_CACHED_DATA)} invoices from NetSuite.")
-
 # On-demand cache for customer detail (keyed by account number)
 _CUSTOMER_DETAIL_CACHE = {}
-_CACHE_STATUS = {'warmup_started': None, 'warmup_finished': None, 'last_refresh': None, 'warmup_in_progress': False}
+_CACHE_STATUS = {
+    'data_loading': True,
+    'data_ready': False,
+    'data_error': None,
+    'data_started': None,
+    'data_finished': None,
+    'warmup_started': None,
+    'warmup_finished': None,
+    'last_refresh': None,
+    'warmup_in_progress': False,
+}
+_DATA_LOAD_LOCK = threading.Lock()
 
 def _warm_cache():
     from datetime import datetime
@@ -308,21 +314,38 @@ def _warm_cache():
     _CACHE_STATUS['warmup_in_progress'] = False
     _CACHE_STATUS['last_refresh'] = datetime.now().isoformat()
 
-def _background_refresh():
+def _load_data_and_warm_cache():
     global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
-    _warm_cache()
+    from datetime import datetime
+    if not _DATA_LOAD_LOCK.acquire(blocking=False):
+        return
+    initial_load = _CACHED_DATA is None
+    _CACHE_STATUS['data_loading'] = True
+    if initial_load:
+        _CACHE_STATUS['data_ready'] = False
+    _CACHE_STATUS['data_error'] = None
+    _CACHE_STATUS['data_started'] = datetime.now().isoformat()
+    try:
+        data = _query_snowflake()
+        _CACHED_DATA = data
+        _CUSTOMER_DETAIL_CACHE = {}
+        _CACHE_STATUS['data_ready'] = True
+        _CACHE_STATUS['data_finished'] = datetime.now().isoformat()
+        print(f"Loaded {len(data)} invoices from NetSuite.")
+        _warm_cache()
+    except Exception as e:
+        _CACHE_STATUS['data_error'] = str(e)
+        print(f"Data load failed: {e}")
+    finally:
+        _CACHE_STATUS['data_loading'] = False
+        _DATA_LOAD_LOCK.release()
+
+def _background_refresh():
+    _load_data_and_warm_cache()
     while True:
         time.sleep(3600)
-        try:
-            print("Hourly refresh: reloading data...")
-            _CACHED_DATA = _query_snowflake()
-            _CUSTOMER_DETAIL_CACHE = {}
-            _warm_cache()
-            print(f"Hourly refresh: done. {len(_CACHED_DATA)} invoices.")
-        except Exception as e:
-            print(f"Hourly refresh failed: {e}")
-
-threading.Thread(target=_background_refresh, daemon=True).start()
+        print("Hourly refresh: reloading data...")
+        _load_data_and_warm_cache()
 
 # Load notes from CSV export
 _NOTES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'notes_data.json')
@@ -858,20 +881,75 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 [data-theme="iterable"] .export-menu { background: #ffffff; border-color: var(--border); box-shadow: 0 8px 24px rgba(12,42,51,0.12); }
 [data-theme="iterable"] .export-menu a:hover { background: #f3f8fa; }
 
+/* UDI-style initial loading shell */
+.ar-loading-shell {
+    max-width: 96rem; margin: 0 auto; padding: 0.85rem 1.25rem 2.5rem;
+}
+.loading-metrics {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.75rem; padding: 1.35rem;
+    border: 1px solid var(--border); border-radius: 1.35rem;
+    background: #fff; box-shadow: 0 8px 28px rgba(12,42,51,0.06);
+}
+.loading-card {
+    min-height: 7.25rem; padding: 1.15rem 1.25rem;
+    border: 1px solid var(--border); border-radius: 0.9rem;
+    background: #f7fbfd;
+}
+.loading-card span {
+    display: block; height: 0.65rem; margin-bottom: 0.75rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #e3eef2 0%, #f8fbfc 45%, #d8e8ed 70%, #e3eef2 100%);
+    background-size: 280% 100%; animation: ar-loading-sweep 1.15s ease-in-out infinite;
+}
+.loading-card span:nth-child(1) { width: 48%; }
+.loading-card span:nth-child(2) { width: 78%; height: 1.65rem; margin-top: 0.9rem; }
+.loading-card span:nth-child(3) { width: 62%; }
+.loading-stage {
+    min-height: 24rem; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 0.65rem;
+    color: var(--text-muted); text-align: center;
+}
+.loading-stage strong { color: var(--accent); font-size: 1rem; }
+.loading-stage p { max-width: 28rem; font-size: 0.85rem; }
+.loading-orbit {
+    width: 3.5rem; height: 3.5rem; margin-bottom: 0.5rem;
+    border: 4px solid #d8e8ed; border-top-color: var(--accent);
+    border-right-color: #d4a72c; border-radius: 50%;
+    box-shadow: 0 0 0 0.4rem rgba(0,90,114,0.05);
+    animation: ar-loading-spin 0.95s linear infinite;
+}
+.loading-error { color: #991b1b; }
+.loading-retry {
+    display: none; padding: 0.5rem 0.9rem; border-radius: 999px;
+    border: 1px solid var(--accent); color: var(--accent);
+    background: #fff; text-decoration: none; font-weight: 700;
+}
+.ar-loading-shell.has-error .loading-orbit { animation: none; border-color: #fca5a5; }
+.ar-loading-shell.has-error .loading-retry { display: inline-flex; }
+@keyframes ar-loading-sweep {
+    from { background-position: 120% 50%; }
+    to { background-position: -60% 50%; }
+}
+@keyframes ar-loading-spin { to { transform: rotate(360deg); } }
+
 @media (max-width: 1050px) {
-    .metrics-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .metrics-row, .loading-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
     .panels { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-    .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .metrics-row, .loading-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ar-hero-actions { align-items: flex-start; }
 }
 @media (max-width: 520px) {
-    .container { padding-left: 0.75rem; padding-right: 0.75rem; }
-    .metrics-row { grid-template-columns: 1fr; padding: 1rem; }
+    .container, .ar-loading-shell { padding-left: 0.75rem; padding-right: 0.75rem; }
+    .metrics-row, .loading-metrics { grid-template-columns: 1fr; padding: 1rem; }
     .filter-bar input { min-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .loading-card span, .loading-orbit { animation: none; }
 }
 
 /* Iterable scrollbar */
@@ -1192,7 +1270,7 @@ function loadDiagnostics() {
     if (!el.innerHTML || el.innerHTML.indexOf('Loading') === -1 || el.innerHTML.length < 20) {
         el.innerHTML = '<span style="color:var(--text-muted)">Loading...</span>';
     }
-    fetch('/diagnostics')
+    fetch('/diagnostics', {cache: 'no-store'})
         .then(function(r) { return r.json(); })
         .then(function(d) {
             var pct = d.cache_pct;
@@ -1239,8 +1317,37 @@ function switchEETab(tab) {
     document.getElementById('ee-' + tab).classList.add('active');
 }
 
+function pollDataReady() {
+    var shell = document.getElementById('ar-loading-shell');
+    if (!shell) return;
+    fetch('/diagnostics')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.data_ready) {
+                window.location.reload();
+                return;
+            }
+            if (d.data_error) {
+                shell.classList.add('has-error');
+                var title = document.getElementById('loading-title');
+                var detail = document.getElementById('loading-detail');
+                if (title) {
+                    title.textContent = 'Unable to load collections data';
+                    title.classList.add('loading-error');
+                }
+                if (detail) detail.textContent = 'Snowflake did not respond. Retry the data load.';
+                return;
+            }
+            window.setTimeout(pollDataReady, 750);
+        })
+        .catch(function() {
+            window.setTimeout(pollDataReady, 1500);
+        });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     document.documentElement.setAttribute('data-theme', 'iterable');
+    pollDataReady();
     updateTotals();
 });
 """
@@ -1512,6 +1619,10 @@ app, rt = fast_app(
     title="AR Aging",
 )
 
+@app.on_event("startup")
+async def start_background_data_load():
+    threading.Thread(target=_background_refresh, daemon=True).start()
+
 # Security: Auth enforcement middleware (requires IAP headers in production)
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -1779,8 +1890,69 @@ def get_customer_detail(acct_num: str):
     )
 
 
+def loading_shell():
+    has_error = bool(_CACHE_STATUS.get('data_error'))
+    return Div(
+        Div(
+            Div(
+                Div(
+                    Div(
+                        Div(
+                            Img(src="/iterable-logo-white.svg", alt="Iterable", width="172", height="26", cls="ar-brand-logo"),
+                        ),
+                        P("Collections \u00b7 AR Aging Report", cls="ar-hero-kicker"),
+                        H1("AR Aging for Collections", cls="ar-hero-title"),
+                    ),
+                    Div(
+                        Span(cls="live-dot", aria_hidden="true"),
+                        Span("Preparing collections data\u2026"),
+                        cls="ar-hero-meta",
+                    ),
+                    cls="ar-hero-top",
+                ),
+                cls="ar-hero-inner",
+            ),
+            cls="ar-hero",
+        ),
+        Main(
+            Div(
+                *[
+                    Div(Span(), Span(), Span(), cls="loading-card")
+                    for _ in range(5)
+                ],
+                cls="loading-metrics",
+                aria_hidden="true",
+            ),
+            Div(
+                Div(cls="loading-orbit", aria_hidden="true"),
+                Strong(
+                    "Unable to load collections data" if has_error else "Loading accounts receivable",
+                    id="loading-title",
+                    cls="loading-error" if has_error else "",
+                ),
+                P(
+                    "Snowflake did not respond. Retry the data load."
+                    if has_error
+                    else "Connecting to Snowflake and preparing collections data\u2026",
+                    id="loading-detail",
+                ),
+                A("Retry", href="/refresh", cls="loading-retry"),
+                cls="loading-stage",
+            ),
+            id="ar-loading-shell",
+            cls="ar-loading-shell has-error" if has_error else "ar-loading-shell",
+            role="status",
+            aria_live="polite",
+            aria_busy="true",
+        ),
+    )
+
+
 @rt("/")
 def get(request: Request):
+    if _CACHED_DATA is None:
+        return loading_shell()
+
     data = _CACHED_DATA or []
 
     buckets = {'31-60': [], '61-90': [], '91-120': [], '120+': []}
@@ -2081,7 +2253,7 @@ def get(request: Request):
                             H3("How to Use"),
                             Ul(
                                 Li(Span("Click a bucket card or bar", cls="ee-highlight"), " to filter the table to that aging range. Click again to clear."),
-                                Li(Span("Click a customer name", cls="ee-highlight"), " to open the detail drawer with addresses and contacts."),
+                                Li(Span("Click any invoice row", cls="ee-highlight"), " to open the customer detail drawer with addresses and contacts."),
                                 Li(Span("Click the notes icon", cls="ee-highlight"), " on any invoice row to view or add collection notes."),
                                 Li("Use the search box to find customers or invoices by name/number."),
                                 Li("Click column headers to sort ascending/descending."),
@@ -2179,6 +2351,9 @@ def diagnostics():
         duration = f"{mins}m {secs:.1f}s (in progress)" if mins else f"{secs:.1f}s (in progress)"
     return Response(
         content=json.dumps({
+            'data_loading': _CACHE_STATUS.get('data_loading', False),
+            'data_ready': _CACHE_STATUS.get('data_ready', False),
+            'data_error': bool(_CACHE_STATUS.get('data_error')),
             'invoices_loaded': len(data),
             'total_accounts': total_accts,
             'cached_accounts': cached_accts,
@@ -2228,10 +2403,7 @@ def logo():
 
 @rt("/refresh")
 def refresh_data():
-    global _CACHED_DATA, _CUSTOMER_DETAIL_CACHE
-    _CACHED_DATA = _query_snowflake()
-    _CUSTOMER_DETAIL_CACHE = {}
-    threading.Thread(target=_warm_cache, daemon=True).start()
+    threading.Thread(target=_load_data_and_warm_cache, daemon=True).start()
     return RedirectResponse("/", status_code=303)
 
 
@@ -2330,4 +2502,8 @@ def export_data(fmt: str):
     return Response(content="Unknown format", status_code=400)
 
 
-serve(host="0.0.0.0", port=int(os.environ.get("PORT", 5099)))
+serve(
+    host="0.0.0.0",
+    port=int(os.environ.get("PORT", 5099)),
+    reload=os.environ.get("LIVE_RELOAD", "false").lower() == "true",
+)
