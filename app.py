@@ -801,7 +801,7 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 /* Iterable panels and table */
 [data-theme="iterable"] .panel { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 12px; }
 [data-theme="iterable"] .panel h3 { color: #005a72; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; }
-[data-theme="iterable"] .table-wrap { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 12px; overflow: hidden; }
+[data-theme="iterable"] .table-wrap { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-radius: 12px; }
 [data-theme="iterable"] th { background: #1a5c6e !important; color: #ffffff !important; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
 [data-theme="iterable"] th:hover { color: #d5ff9f !important; }
 [data-theme="iterable"] th.sorted .arrow { color: #d5ff9f; }
