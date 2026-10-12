@@ -11,6 +11,8 @@ from session_user import session_user
 # ---------------------------------------------------------------------------
 print("Connecting to Snowflake (OAuth browser auth may be required)...")
 _CACHED_DATA = None
+_BUCKETS_31_PLUS = ('31-60', '61-90', '91-120', '120+')
+_EARLY_BUCKETS = ('Current', '0-30')
 
 def _get_connection():
     private_key_path = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PATH")
@@ -47,17 +49,18 @@ def _query_snowflake(conn=None):
             DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) AS days_past_due,
             t.CUSTBODY_IT_INV_SENT_VIA_EMAIL AS invoice_sent,
             CASE
-                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 31  AND 60  THEN '31-60'
-                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 61  AND 90  THEN '61-90'
-                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 91  AND 120 THEN '91-120'
-                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) > 120               THEN '120+'
+                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) < 0                          THEN 'Current'
+                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 0  AND 30          THEN '0-30'
+                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 31 AND 60          THEN '31-60'
+                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 61 AND 90          THEN '61-90'
+                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) BETWEEN 91 AND 120         THEN '91-120'
+                WHEN DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) > 120                      THEN '120+'
             END AS aging_bucket
         FROM FIVETRAN_DB.NETSUITE_SUITE.TRANSACTION t
         JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMER c ON t.ENTITY = c.ID
         WHERE t.TYPE = 'CustInvc'
           AND t._FIVETRAN_DELETED = false
           AND t.FOREIGNAMOUNTUNPAID > 0
-          AND DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) >= 31
         ORDER BY c.ENTITYID::INT, t.TRANDATE
     """)
     rows = cur.fetchall()
@@ -209,7 +212,6 @@ def _query_all_customer_details(conn=None):
               JOIN FIVETRAN_DB.NETSUITE_SUITE.CUSTOMER c2 ON t.ENTITY = c2.ID
               WHERE t.TYPE = 'CustInvc' AND t._FIVETRAN_DELETED = false
                 AND t.FOREIGNAMOUNTUNPAID > 0
-                AND DATEDIFF('day', t.DUEDATE, CURRENT_DATE()) >= 31
           )
     """)
     rows = cur.fetchall()
@@ -387,6 +389,13 @@ body {
     display: flex; flex-wrap: wrap; align-items: flex-start;
     justify-content: space-between; gap: 0.75rem 1.25rem;
 }
+.ar-hero-brand { min-width: 0; flex: 1 1 16rem; }
+.ar-hero-summary {
+    display: flex; flex-wrap: wrap; align-items: baseline; align-content: flex-start;
+    gap: 0.25rem 0.65rem; margin-top: 6px; max-width: 100%;
+}
+.ar-hero-summary #header-count { margin-right: 0 !important; }
+.ar-hero-summary #header-inv-amt { margin-left: 0 !important; }
 .ar-brand-logo { display: block; width: 10.5rem; height: auto; max-width: 48vw; object-fit: contain; }
 .ar-hero-kicker {
     margin: 0.65rem 0 0; font-size: 0.72rem; font-weight: 650;
@@ -408,7 +417,37 @@ body {
     background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.25);
 }
 .ar-hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
-.ar-hero-buttons { display: flex; align-items: center; gap: 8px; }
+.ar-hero-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.ar-current-toggle {
+    display: inline-flex; align-items: center; gap: 0.55rem;
+    padding: 0.35rem 0.65rem 0.35rem 0.75rem; border-radius: 999px;
+    background: rgba(4,39,50,0.34); border: 1px solid rgba(255,255,255,0.24);
+    font-size: 0.78rem; font-weight: 650; color: #ffffff; cursor: pointer;
+    user-select: none; white-space: nowrap;
+}
+.ar-current-toggle input {
+    position: absolute; opacity: 0; width: 0; height: 0;
+}
+.ar-current-toggle .toggle-track {
+    position: relative; width: 2.1rem; height: 1.15rem; border-radius: 999px;
+    background: rgba(255,255,255,0.22); border: 1px solid rgba(255,255,255,0.35);
+    transition: background 0.2s, border-color 0.2s;
+}
+.ar-current-toggle .toggle-thumb {
+    position: absolute; top: 2px; left: 2px; width: 0.85rem; height: 0.85rem;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    transition: transform 0.2s;
+}
+.ar-current-toggle input:checked + .toggle-track {
+    background: rgba(74,222,128,0.35); border-color: #4ade80;
+}
+.ar-current-toggle input:checked + .toggle-track .toggle-thumb {
+    transform: translateX(0.95rem);
+}
+.ar-current-toggle input:focus-visible + .toggle-track {
+    outline: 2px solid #c8f5df; outline-offset: 2px;
+}
+.metric-card.c-030[hidden], .bar-col-early[hidden] { display: none !important; }
 .app-header { display: none; }
 .header-right { text-align: right; display: flex; align-items: center; gap: 12px; }
 .header-user { font-size: 11px; color: var(--text-muted); text-align: right; line-height: 1.4; }
@@ -417,20 +456,35 @@ body {
 .header-count { color: var(--text-muted); font-size: 13px; margin-right: 16px; }
 .header-total { font-size: 20px; font-weight: 700; color: var(--accent); display: inline; }
 .header-inv-amt { font-size: 11px; color: var(--text-muted); margin-left: 4px; display: inline; }
-.metrics-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin: 24px 0; }
+.metrics-row {
+    display: grid; width: 100%; min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.25rem), 1fr));
+    gap: 16px; margin: 24px 0;
+}
 .metric-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 12px; padding: 20px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
+    min-width: 0; max-width: 100%; overflow: hidden;
+    container-type: inline-size;
 }
 .metric-card:hover { border-color: var(--accent); }
 .metric-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .metric-card .label {
-    font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+    font-size: 12px; color: var(--text-muted); text-transform: uppercase;
     letter-spacing: 0.5px; margin-bottom: 4px;
 }
-.metric-card .value { font-size: 26px; font-weight: 700; margin: 4px 0; }
-.metric-card .sub { font-size: 13px; color: var(--text-muted); }
+.metric-card .value {
+    font-size: clamp(1rem, 6cqi + 0.5rem, 1.9rem); font-weight: 700; margin: 4px 0;
+    line-height: 1.12; font-variant-numeric: tabular-nums;
+    max-width: 100%; overflow-wrap: break-word;
+}
+.metric-card .sub {
+    font-size: clamp(0.75rem, 1.6vw, 0.9rem); color: var(--text-muted);
+    line-height: 1.35; overflow-wrap: break-word;
+}
 .c-total .value { color: var(--accent); }
+.c-030 { border-radius: 12px; }
+.c-030 .value { color: var(--green); }
 .c-31 .value { color: var(--yellow); }
 .c-61 .value { color: var(--orange); }
 .c-91 .value { color: var(--red); }
@@ -443,16 +497,85 @@ body {
 }
 .panel h3 { font-size: 14px; margin-bottom: 16px; color: var(--text-muted); }
 
-.bar-chart { display: flex; gap: 16px; align-items: flex-end; height: 140px; padding: 0 12px; }
+.bar-chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+.bar-chart {
+    display: flex; gap: 12px; align-items: stretch;
+    height: clamp(11rem, 22vh, 15rem); padding: 0 8px;
+    min-width: min(100%, 22rem); box-sizing: border-box;
+}
+.bar-chart.has-current-ar { min-width: 26rem; }
 .bar-col {
-    display: flex; flex-direction: column; align-items: center; flex: 1; gap: 4px;
-    cursor: pointer; opacity: 1; transition: opacity 0.2s;
+    display: flex; flex-direction: column; align-items: stretch; flex: 1;
+    cursor: pointer; opacity: 1; transition: opacity 0.2s; min-width: 2.75rem;
+    min-height: 0;
 }
 .bar-col.dimmed { opacity: 0.3; }
 .bar-col:hover { opacity: 1 !important; }
-.bar-val { font-size: 12px; font-weight: 600; color: var(--text); }
-.bar { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; transition: opacity 0.2s; }
-.bar-lbl { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.bar-plot {
+    flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+    align-items: center; min-height: 0; width: 100%; padding-bottom: 2px;
+}
+.bar-val {
+    font-size: 10px; font-weight: 600; color: var(--text);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+    margin-bottom: 4px; flex-shrink: 0; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis;
+}
+.bar {
+    width: 100%; min-height: 4px; flex-shrink: 0;
+    border-radius: min(0.85rem, 42%) min(0.85rem, 42%) 4px 4px;
+    transition: height 0.25s ease, opacity 0.2s;
+    overflow: hidden;
+}
+.bar-stacked {
+    display: flex; flex-direction: column-reverse; justify-content: flex-end;
+}
+.bar-seg {
+    width: 100%; min-height: 2px; box-sizing: border-box;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.28);
+    transition: filter 0.15s ease;
+}
+.bar-seg:hover { filter: brightness(1.08); z-index: 1; position: relative; cursor: pointer; }
+.bar-seg.active { box-shadow: inset 0 0 0 2px #005a72; filter: brightness(1.05); }
+.bar-chart-hint {
+    font-size: 0.72rem; color: var(--text-muted); margin: -8px 0 12px; font-weight: 500;
+}
+[data-theme="iterable"] .bar-chart-hint { color: var(--text-muted); }
+.bar-chart-tooltip {
+    position: fixed; z-index: 2500; pointer-events: none;
+    opacity: 0; visibility: hidden;
+    transform: translateY(6px);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
+    max-width: 17rem; min-width: 10rem;
+    border-radius: 0.65rem;
+    background: #ffffff; border: 1px solid #d8e8ed;
+    box-shadow: 0 14px 36px rgba(12, 42, 51, 0.16);
+    overflow: hidden;
+}
+.bar-chart-tooltip.visible {
+    opacity: 1; visibility: visible; transform: translateY(0);
+}
+.bar-chart-tooltip .bct-inner { display: flex; align-items: stretch; }
+.bar-chart-tooltip .bct-accent { width: 4px; flex-shrink: 0; background: #005a72; }
+.bar-chart-tooltip .bct-body { padding: 0.7rem 0.9rem 0.75rem; min-width: 0; }
+.bar-chart-tooltip .bct-customer {
+    font-size: 0.78rem; font-weight: 650; color: #0c2a33;
+    line-height: 1.35; margin-bottom: 0.15rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bar-chart-tooltip .bct-amount {
+    font-size: 1.125rem; font-weight: 800; color: #005a72;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.bar-chart-tooltip .bct-meta {
+    font-size: 0.7rem; font-weight: 550; color: #5a7a86; margin-top: 0.3rem;
+}
+.bar-lbl {
+    flex-shrink: 0; font-size: 10px; color: var(--text-muted);
+    text-align: center; max-width: 100%; padding: 8px 2px 0;
+    border-top: 1px solid var(--border);
+}
+[data-theme="iterable"] .bar-lbl { border-top-color: #d8e8ed; color: var(--text-muted); }
 
 .top-list { list-style: none; }
 .top-list li {
@@ -528,6 +651,7 @@ body {
     display: inline-block; padding: 3px 10px; border-radius: 20px;
     font-size: 11px; font-weight: 600; white-space: nowrap;
 }
+.b-030 { background: rgba(61,214,140,0.15); color: var(--green); }
 .b-31  { background: rgba(245,197,66,0.15); color: var(--yellow); }
 .b-61  { background: rgba(245,158,66,0.15); color: var(--orange); }
 .b-91  { background: rgba(245,66,66,0.15);  color: var(--red); }
@@ -799,9 +923,11 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     gap: 0.75rem; margin: 0 0 1.25rem; padding: 1.35rem;
     border: 1px solid var(--border); border-radius: 1.35rem;
     background: #fff; box-shadow: 0 8px 28px rgba(12,42,51,0.06);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+    min-width: 0;
 }
 [data-theme="iterable"] .metric-card {
-    min-height: 7.25rem; padding: 1.15rem 1.25rem 1.2rem;
+    min-height: 0; padding: 1.15rem 1.25rem 1.2rem;
     border-radius: 0.9rem; box-shadow: none;
 }
 [data-theme="iterable"] .metric-card:hover {
@@ -810,20 +936,29 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 }
 [data-theme="iterable"] .metric-card.active { border-color: #2c8798; box-shadow: 0 0 0 2px #2c8798; }
 [data-theme="iterable"] .c-total { background: #fff; border-color: var(--border); }
+[data-theme="iterable"] .c-030 {
+    background: linear-gradient(150deg, #d1fae5 0%, #ecfdf5 60%, #f0fdf4 100%);
+    border-color: #6ee7b7; border-radius: 0.9rem;
+}
 [data-theme="iterable"] .c-31 { background: linear-gradient(150deg, #fef3c7 0%, #fefce8 60%, #fffbeb 100%); border-color: #fcd34d; }
 [data-theme="iterable"] .c-61 { background: linear-gradient(150deg, #ffedd5 0%, #fff7ed 60%, #fffbeb 100%); border-color: #fdba74; }
 [data-theme="iterable"] .c-91,
 [data-theme="iterable"] .c-120 { background: linear-gradient(150deg, #fee2e2 0%, #fef2f2 60%, #fff1f2 100%); border-color: #fca5a5; }
 [data-theme="iterable"] .c-total .value { color: #005a72; }
+[data-theme="iterable"] .c-030 .value { color: #047857; }
 [data-theme="iterable"] .c-31 .value { color: #b8860b; }
 [data-theme="iterable"] .c-61 .value { color: #c76a15; }
 [data-theme="iterable"] .c-91 .value { color: #cc2936; }
 [data-theme="iterable"] .c-120 .value { color: #a01a28; }
-[data-theme="iterable"] .metric-card .label { color: var(--text-muted); font-weight: 750; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.09em; }
-[data-theme="iterable"] .metric-card .value { font-family: inherit; font-size: 1.65rem; font-weight: 800; letter-spacing: -0.035em; }
-[data-theme="iterable"] .metric-card .sub { color: var(--text-muted); font-size: 0.8rem; font-weight: 550; }
+[data-theme="iterable"] .metric-card .label { color: var(--text-muted); font-weight: 750; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.09em; }
+[data-theme="iterable"] .metric-card .value {
+    font-family: inherit; font-weight: 800; letter-spacing: -0.02em;
+    font-size: clamp(1rem, 6cqi + 0.5rem, 1.75rem);
+}
+[data-theme="iterable"] .metric-card .sub { color: var(--text-muted); font-size: 0.875rem; font-weight: 550; }
 
 /* Iterable badges */
+[data-theme="iterable"] .b-030 { background: rgba(4,120,87,0.12); color: #047857; }
 [data-theme="iterable"] .b-31  { background: rgba(184,134,11,0.12); color: #8b6914; }
 [data-theme="iterable"] .b-61  { background: rgba(199,106,21,0.12); color: #9a5210; }
 [data-theme="iterable"] .b-91  { background: rgba(204,41,54,0.12); color: #a01a28; }
@@ -836,6 +971,10 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     box-shadow: 0 4px 18px rgba(12,42,51,0.04);
     min-width: 0; overflow: hidden;
 }
+[data-theme="iterable"] .panel.panel-chart {
+    overflow-x: auto; overflow-y: visible;
+}
+[data-theme="iterable"] .panel.panel-chart .bar-chart-scroll { overflow: visible; }
 [data-theme="iterable"] .panel h3 { color: var(--text); font-weight: 750; text-transform: none; font-size: 1rem; letter-spacing: -0.01em; }
 [data-theme="iterable"] .table-wrap {
     border-radius: 1rem; border-left: 4px solid var(--accent);
@@ -886,7 +1025,7 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
     max-width: 96rem; margin: 0 auto; padding: 0.85rem 1.25rem 2.5rem;
 }
 .loading-metrics {
-    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
     gap: 0.75rem; padding: 1.35rem;
     border: 1px solid var(--border); border-radius: 1.35rem;
     background: #fff; box-shadow: 0 8px 28px rgba(12,42,51,0.06);
@@ -933,20 +1072,34 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 }
 @keyframes ar-loading-spin { to { transform: rotate(360deg); } }
 
-@media (max-width: 1050px) {
-    .metrics-row, .loading-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
 @media (max-width: 900px) {
     .panels { grid-template-columns: 1fr; }
+    .ar-hero-top { flex-direction: column; align-items: stretch; }
+    .ar-hero-actions { align-items: flex-start; width: 100%; }
+    .ar-hero-buttons { justify-content: flex-start; }
 }
 @media (max-width: 760px) {
-    .metrics-row, .loading-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .metrics-row,
+    [data-theme="iterable"] .metrics-row,
+    .loading-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+    }
     .ar-hero-actions { align-items: flex-start; }
+    .ar-hero-title { font-size: clamp(1.35rem, 6vw, 1.85rem); }
+    [data-theme="iterable"] .metric-card { padding: 0.9rem 1rem; }
 }
 @media (max-width: 520px) {
     .container, .ar-loading-shell { padding-left: 0.75rem; padding-right: 0.75rem; }
-    .metrics-row, .loading-metrics { grid-template-columns: 1fr; padding: 1rem; }
-    .filter-bar input { min-width: 100%; }
+    .metrics-row,
+    [data-theme="iterable"] .metrics-row,
+    .loading-metrics {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 100%), 1fr));
+        padding: 1rem;
+    }
+    .filter-bar input { min-width: 100%; flex: 1 1 100%; }
+    .filter-bar select, .export-wrap { flex: 1 1 auto; }
+    .ar-hero-meta { white-space: normal; }
+    .ar-current-toggle { font-size: 0.72rem; }
 }
 @media (prefers-reduced-motion: reduce) {
     .loading-card span, .loading-orbit { animation: none; }
@@ -964,11 +1117,198 @@ td.notes-cell { text-align: center; cursor: pointer; width: 40px; }
 # ---------------------------------------------------------------------------
 JS = """
 var activeBucket = null;
+var activeCustomer = null;
 var sortCol = -1;
 var sortAsc = true;
+var includeCurrentAR = false;
+var arMetrics = null;
+
+function isEarlyBucket(bucket) {
+    return bucket === 'Current' || bucket === '0-30';
+}
+
+function bucketMatchesFilter(rowBucket, filterBucket) {
+    if (!filterBucket) return true;
+    if (filterBucket === '0-30') return isEarlyBucket(rowBucket);
+    return rowBucket === filterBucket;
+}
+
+function initCurrentARMetrics(metrics) {
+    arMetrics = metrics;
+    var saved = localStorage.getItem('ar-include-current');
+    if (saved === '1') {
+        setIncludeCurrentAR(true, false);
+    } else {
+        setIncludeCurrentAR(false, false);
+    }
+}
+
+function setIncludeCurrentAR(on, persist) {
+    includeCurrentAR = !!on;
+    if (persist !== false) {
+        localStorage.setItem('ar-include-current', on ? '1' : '0');
+    }
+    var toggle = document.getElementById('ar-current-toggle');
+    if (toggle) toggle.checked = on;
+    var row = document.getElementById('metrics-row');
+    if (row) row.classList.toggle('has-current-ar', on);
+    var card = document.getElementById('metric-card-0-30');
+    if (card) card.hidden = !on;
+    var bar = document.getElementById('bar-col-0-30');
+    if (bar) bar.hidden = !on;
+    var opt = document.getElementById('bucket-opt-0-30');
+    if (opt) opt.hidden = !on;
+    var chart = document.querySelector('.bar-chart');
+    if (chart) chart.classList.toggle('has-current-ar', on);
+    if (!on && (activeBucket === '0-30' || activeBucket === 'Current')) {
+        activeBucket = null;
+        document.getElementById('bucket-filter').value = '';
+    }
+    updateSummaryHeader();
+    updateExportLinks();
+    rescaleBarChart();
+    applyFilters();
+}
+
+function rescaleBarChart() {
+    window.requestAnimationFrame(function() {
+        var cols = document.querySelectorAll('.bar-chart .bar-col');
+        if (!cols.length) return;
+        var amounts = [];
+        cols.forEach(function(col) {
+            if (col.hidden) return;
+            var amt = parseFloat(col.getAttribute('data-amount') || '0');
+            if (!Number.isFinite(amt)) amt = 0;
+            amounts.push({ col: col, amt: amt });
+        });
+        var mx = 0;
+        amounts.forEach(function(item) { if (item.amt > mx) mx = item.amt; });
+        if (mx <= 0) mx = 1;
+        amounts.forEach(function(item) {
+            var plot = item.col.querySelector('.bar-plot');
+            var bar = item.col.querySelector('.bar');
+            if (!plot || !bar) return;
+            var valEl = item.col.querySelector('.bar-val');
+            var valH = valEl ? valEl.offsetHeight + 6 : 0;
+            var available = plot.clientHeight - valH;
+            if (available < 12) available = 12;
+            bar.style.height = Math.max(Math.round(item.amt / mx * available), 4) + 'px';
+        });
+    });
+}
+
+var _barResizeTimer;
+function scheduleBarChartResize() {
+    window.clearTimeout(_barResizeTimer);
+    _barResizeTimer = window.setTimeout(rescaleBarChart, 80);
+}
+
+function initBarChartTooltips() {
+    var tip = document.getElementById('bar-chart-tooltip');
+    if (!tip) return;
+    var accent = tip.querySelector('.bct-accent');
+    var nameEl = tip.querySelector('.bct-customer');
+    var amtEl = tip.querySelector('.bct-amount');
+    var metaEl = tip.querySelector('.bct-meta');
+    var activeSeg = null;
+
+    function hideTip() {
+        activeSeg = null;
+        tip.classList.remove('visible');
+        tip.setAttribute('aria-hidden', 'true');
+    }
+
+    function placeTip(e) {
+        var pad = 14;
+        var x = e.clientX + pad;
+        var y = e.clientY + pad;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+        var rect = tip.getBoundingClientRect();
+        if (rect.right > window.innerWidth - 10) {
+            x = e.clientX - rect.width - pad;
+        }
+        if (rect.bottom > window.innerHeight - 10) {
+            y = e.clientY - rect.height - pad;
+        }
+        tip.style.left = Math.max(10, x) + 'px';
+        tip.style.top = Math.max(10, y) + 'px';
+    }
+
+    function showTip(seg, e) {
+        activeSeg = seg;
+        var name = seg.getAttribute('data-customer') || '';
+        var amt = parseFloat(seg.getAttribute('data-amount') || '0');
+        var pct = seg.getAttribute('data-pct') || '';
+        var bucket = seg.getAttribute('data-bucket') || '';
+        var color = seg.style.backgroundColor || seg.style.background || '#005a72';
+        nameEl.textContent = name;
+        amtEl.textContent = fm(amt);
+        metaEl.textContent = pct + '% of ' + bucket + ' days bucket';
+        if (accent) accent.style.background = color;
+        tip.classList.add('visible');
+        tip.setAttribute('aria-hidden', 'false');
+        placeTip(e);
+    }
+
+    document.querySelectorAll('.bar-seg').forEach(function(seg) {
+        seg.addEventListener('mouseenter', function(e) { showTip(seg, e); });
+        seg.addEventListener('mousemove', function(e) {
+            if (activeSeg === seg) placeTip(e);
+        });
+        seg.addEventListener('mouseleave', hideTip);
+    });
+}
+
+function updateSummaryHeader() {
+    if (!arMetrics) return;
+    var view = includeCurrentAR ? arMetrics.full : arMetrics.main;
+    var hc = document.getElementById('header-count');
+    var ht = document.getElementById('header-total');
+    var hi = document.getElementById('header-inv-amt');
+    if (hc) hc.textContent = invoiceCountLabel(view.grand_count);
+    if (ht) ht.textContent = fm(view.grand_total);
+    if (hi) hi.textContent = 'Inv Amt: ' + fm(view.total_inv_amount);
+    var totalVal = document.querySelector('.metric-card.c-total .value');
+    var totalSub = document.querySelector('.metric-card.c-total .sub');
+    if (totalVal) totalVal.textContent = fm(view.grand_total);
+    if (totalSub) {
+        totalSub.textContent = includeCurrentAR
+            ? invoiceCountLabel(view.grand_count, '(current through 120+ days)')
+            : invoiceCountLabel(view.grand_count, 'past due 31+ days');
+    }
+}
+
+function updateExportLinks() {
+    document.querySelectorAll('#export-menu a').forEach(function(a) {
+        var base = a.getAttribute('href').split('?')[0];
+        a.setAttribute('href', includeCurrentAR ? base + '?include_current=1' : base);
+    });
+}
+
+var _usdFmt = new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD',
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+});
+var _intFmt = new Intl.NumberFormat('en-US');
+
+function _asNumber(n) {
+    var x = Number(n);
+    return Number.isFinite(x) ? x : 0;
+}
 
 function fm(n) {
-    return '$' + n.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
+    return _usdFmt.format(_asNumber(n));
+}
+
+function fc(n) {
+    return _intFmt.format(Math.round(_asNumber(n)));
+}
+
+function invoiceCountLabel(n, suffix) {
+    var c = Math.round(_asNumber(n));
+    var word = c === 1 ? ' invoice' : ' invoices';
+    return fc(c) + word + (suffix ? ' ' + suffix : '');
 }
 
 function getVisibleRows() {
@@ -988,14 +1328,14 @@ function updateTotals() {
     });
     var foot = document.getElementById('tfoot-total');
     if (foot) {
-        foot.querySelector('.tf-count').textContent = count + ' invoices';
+        foot.querySelector('.tf-count').textContent = invoiceCountLabel(count);
         foot.querySelector('.tf-amt').textContent = fm(totalAmt);
         foot.querySelector('.tf-bal').textContent = fm(totalBal);
     }
     var hc = document.getElementById('header-count');
     var ht = document.getElementById('header-total');
     var hi = document.getElementById('header-inv-amt');
-    if (hc) hc.textContent = count + ' invoices';
+    if (hc) hc.textContent = invoiceCountLabel(count);
     if (ht) ht.textContent = fm(totalBal);
     if (hi) {
         hi.textContent = 'Inv Amt: ' + fm(totalAmt);
@@ -1024,27 +1364,7 @@ function updateTop10() {
     });
 }
 
-function applyFilters() {
-    var s = document.getElementById('search').value.toLowerCase();
-    var b = document.getElementById('bucket-filter').value;
-    var bucket = activeBucket || b;
-    document.querySelectorAll('#ar-table tbody tr').forEach(function(row) {
-        var text = row.textContent.toLowerCase();
-        var rb = row.getAttribute('data-bucket');
-        var ms = !s || text.indexOf(s) >= 0;
-        var mb = !bucket || rb === bucket;
-        row.style.display = (ms && mb) ? '' : 'none';
-    });
-    updateTotals();
-    updateTop10();
-}
-
-function filterByBucket(bucket) {
-    if (activeBucket === bucket) {
-        activeBucket = null;
-    } else {
-        activeBucket = bucket;
-    }
+function syncBucketFilterUI() {
     document.querySelectorAll('.metric-card').forEach(function(c) {
         var cb = c.getAttribute('data-bucket');
         if (activeBucket && cb === activeBucket) {
@@ -1061,7 +1381,85 @@ function filterByBucket(bucket) {
             col.classList.remove('dimmed');
         }
     });
-    document.getElementById('bucket-filter').value = activeBucket || '';
+    var bf = document.getElementById('bucket-filter');
+    if (bf) bf.value = activeBucket || '';
+}
+
+function clearBarSegmentSelection() {
+    document.querySelectorAll('.bar-seg.active').forEach(function(el) {
+        el.classList.remove('active');
+    });
+}
+
+function applyFilters() {
+    var searchEl = document.getElementById('search');
+    var s = (searchEl && searchEl.value) ? searchEl.value.toLowerCase() : '';
+    if (activeCustomer && searchEl && searchEl.value.trim() !== activeCustomer) {
+        activeCustomer = null;
+        clearBarSegmentSelection();
+    }
+    var b = document.getElementById('bucket-filter').value;
+    var bucket = activeBucket || b;
+    document.querySelectorAll('#ar-table tbody tr').forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        var rb = row.getAttribute('data-bucket');
+        var rowCust = row.getAttribute('data-customer') || '';
+        var ms;
+        if (activeCustomer) {
+            ms = rowCust === activeCustomer;
+        } else {
+            ms = !s || text.indexOf(s) >= 0;
+        }
+        var mb = bucketMatchesFilter(rb, bucket);
+        var me = includeCurrentAR || !isEarlyBucket(rb);
+        row.style.display = (ms && mb && me) ? '' : 'none';
+    });
+    updateTotals();
+    updateTop10();
+}
+
+function filterByCustomer(customer, bucket, e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    if (customer === 'Other') {
+        activeCustomer = null;
+        activeBucket = bucket || null;
+        var searchOther = document.getElementById('search');
+        if (searchOther) searchOther.value = '';
+    } else {
+        activeCustomer = customer;
+        activeBucket = bucket || null;
+        var search = document.getElementById('search');
+        if (search) search.value = customer;
+    }
+    clearBarSegmentSelection();
+    if (customer !== 'Other') {
+        document.querySelectorAll('.bar-seg').forEach(function(seg) {
+            if (seg.getAttribute('data-customer') === customer
+                && seg.getAttribute('data-bucket') === bucket) {
+                seg.classList.add('active');
+            }
+        });
+    }
+    syncBucketFilterUI();
+    applyFilters();
+    var wrap = document.querySelector('.table-wrap');
+    if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function filterByBucket(bucket) {
+    if (activeBucket === bucket) {
+        activeBucket = null;
+    } else {
+        activeBucket = bucket;
+    }
+    activeCustomer = null;
+    clearBarSegmentSelection();
+    var search = document.getElementById('search');
+    if (search) search.value = '';
+    syncBucketFilterUI();
     applyFilters();
 }
 
@@ -1348,7 +1746,11 @@ function pollDataReady() {
 document.addEventListener('DOMContentLoaded', function() {
     document.documentElement.setAttribute('data-theme', 'iterable');
     pollDataReady();
+    updateExportLinks();
+    rescaleBarChart();
+    initBarChartTooltips();
     updateTotals();
+    window.addEventListener('resize', scheduleBarChartResize);
 });
 """
 
@@ -1658,13 +2060,103 @@ app.add_middleware(AuthMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 
+def _as_number(val):
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def fm(val):
-    if val is None: return "$0.00"
-    return f"${val:,.2f}"
+    return f"${_as_number(val):,.2f}"
+
+
+def fc(val):
+    return f"{int(_as_number(val)):,}"
+
+
+def fi(count, suffix=""):
+    text = f"{fc(count)} invoice" if int(_as_number(count)) == 1 else f"{fc(count)} invoices"
+    return f"{text} {suffix}".strip() if suffix else text
+
+
+_CHART_SLICE_TOP = 8
+# Iterable brand: teals + sage first, then warm aging accents (matches KPI / theme tokens)
+_SLICE_PALETTE = (
+    '#005a72', '#0a7a8f', '#2c8798', '#399d89', '#5eb3a6',
+    '#6eb8c4', '#047857', '#b8860b', '#c76a15', '#cc2936',
+)
+_SLICE_OTHER = '#c5d8de'  # --border / muted grid from Iterable theme
+
+
+def _customer_slice_color(name, rank=0):
+    if name == 'Other':
+        return _SLICE_OTHER
+    return _SLICE_PALETTE[rank % len(_SLICE_PALETTE)]
+
+
+def _customer_slices(rows, top_n=_CHART_SLICE_TOP):
+    from collections import defaultdict
+    by = defaultdict(float)
+    for r in rows:
+        by[str(r['CUSTOMER_NAME'])] += _as_number(r['INVOICE_BALANCE'])
+    ranked = sorted(by.items(), key=lambda x: -x[1])
+    top = ranked[:top_n]
+    other = sum(amt for _, amt in ranked[top_n:])
+    out = [
+        {'name': n, 'amount': a, 'color': _customer_slice_color(n, i)}
+        for i, (n, a) in enumerate(top) if a > 0
+    ]
+    if other > 0.01:
+        out.append({'name': 'Other', 'amount': other, 'color': _customer_slice_color('Other')})
+    return out
+
+
+def _stacked_bar(slices, bucket_total, bar_height_px, fallback_color, bucket_label=""):
+    """Vertical stacked segments (one slice per customer) inside the bar."""
+    if bucket_total <= 0 or not slices:
+        return Div(style=f"height:{bar_height_px}px;background:{fallback_color}", cls="bar bar-solid")
+    segs = []
+    for sl in sorted(slices, key=lambda s: s['amount']):
+        pct = sl['amount'] / bucket_total * 100
+        if pct < 0.15 and sl['name'] != 'Other':
+            continue
+        segs.append(Div(
+            cls="bar-seg",
+            style=f"flex: 0 0 {pct:.4f}%; background: {sl['color']};",
+            data_customer=str(sl['name']),
+            data_amount=str(sl['amount']),
+            data_pct=f"{pct:.1f}",
+            data_bucket=bucket_label,
+            onclick=f"filterByCustomer('{_esc(sl['name'])}', '{_esc(bucket_label)}', event)",
+        ))
+    if not segs:
+        return Div(style=f"height:{bar_height_px}px;background:{fallback_color}", cls="bar bar-solid")
+    return Div(*segs, style=f"height:{bar_height_px}px", cls="bar bar-stacked")
+
+def _metrics_view(rows):
+    grand_total = sum(r['INVOICE_BALANCE'] for r in rows)
+    return {
+        'grand_total': grand_total,
+        'grand_count': len(rows),
+        'total_inv_amount': sum(r['INVOICE_AMOUNT'] for r in rows),
+    }
+
 
 def badge(bucket):
-    c = {'31-60':'b-31','61-90':'b-61','91-120':'b-91','120+':'b-120'}.get(bucket,'')
-    l = {'31-60':'31-60 days','61-90':'61-90 days','91-120':'91-120 days','120+':'120+ days'}.get(bucket, bucket or '')
+    c = {'Current':'b-030','0-30':'b-030','31-60':'b-31','61-90':'b-61','91-120':'b-91','120+':'b-120'}.get(bucket,'')
+    l = {
+        'Current': 'Current',
+        '0-30': '0-30 days',
+        '31-60': '31-60 days',
+        '61-90': '61-90 days',
+        '91-120': '91-120 days',
+        '120+': '120+ days',
+    }.get(bucket, bucket or '')
     return Span(l, cls=f"badge {c}")
 
 
@@ -1698,7 +2190,7 @@ def get_customer_detail(acct_num: str):
     summary = Div(
         Div(
             Div(fm(cust_balance), cls="drawer-bal"),
-            Div(f"Outstanding balance ({cust_inv_count} invoices)", cls="drawer-inv-amt"),
+            Div(f"Outstanding balance ({fi(cust_inv_count)})", cls="drawer-inv-amt"),
             cls="drawer-summary-col"
         ),
         Div(
@@ -1954,28 +2446,51 @@ def get(request: Request):
         return loading_shell()
 
     data = _CACHED_DATA or []
+    data_main = [r for r in data if r['AGING_BUCKET'] in _BUCKETS_31_PLUS]
+    data_early = [r for r in data if r['AGING_BUCKET'] in _EARLY_BUCKETS]
+    early_total = sum(r['INVOICE_BALANCE'] for r in data_early)
+    early_count = len(data_early)
 
-    buckets = {'31-60': [], '61-90': [], '91-120': [], '120+': []}
-    for r in data:
-        b = r['AGING_BUCKET']
-        if b in buckets: buckets[b].append(r)
+    buckets = {b: [] for b in _BUCKETS_31_PLUS}
+    for r in data_main:
+        buckets[r['AGING_BUCKET']].append(r)
 
     totals = {b: sum(r['INVOICE_BALANCE'] for r in rs) for b, rs in buckets.items()}
     counts = {b: len(rs) for b, rs in buckets.items()}
-    grand_total = sum(totals.values())
-    grand_count = sum(counts.values())
-    total_inv_amount = sum(r['INVOICE_AMOUNT'] for r in data)
+    main_view = _metrics_view(data_main)
+    full_view = _metrics_view(data)
+    grand_total = main_view['grand_total']
+    grand_count = main_view['grand_count']
+    total_inv_amount = main_view['total_inv_amount']
 
     cust_totals = {}
-    for r in data:
+    for r in data_main:
         n = r['CUSTOMER_NAME']
         cust_totals[n] = cust_totals.get(n, 0) + r['INVOICE_BALANCE']
     top10 = sorted(cust_totals.items(), key=lambda x: -x[1])[:10]
 
-    def pct(b):
-        return f"{totals.get(b,0)/grand_total*100:.1f}" if grand_total else "0.0"
+    def pct(b, base_total=grand_total):
+        return f"{totals.get(b,0)/base_total*100:.1f}" if base_total else "0.0"
     mx = max(totals.values()) if totals.values() else 1
-    bc = {'31-60':'#f5c542','61-90':'#f59e42','91-120':'#f54242','120+':'#ff6b6b'}
+
+    def _bar_h(amt, scale_mx):
+        return max(int(amt / scale_mx * 120), 4) if scale_mx else 4
+
+    bc = {
+        '0-30': '#399d89',
+        '31-60': '#b8860b',
+        '61-90': '#c76a15',
+        '91-120': '#cc2936',
+        '120+': '#a01a28',
+    }
+    early_slices = _customer_slices(data_early)
+    bucket_slices = {b: _customer_slices(buckets[b]) for b in _BUCKETS_31_PLUS}
+
+    ar_metrics_json = json.dumps({
+        'main': main_view,
+        'full': full_view,
+        'early': {'total': early_total, 'count': early_count},
+    })
 
     def th_sort(label, idx, right=False):
         cls = "r" if right else ""
@@ -1997,21 +2512,35 @@ def get(request: Request):
                         ),
                         P("Collections \u00b7 AR Aging Report", cls="ar-hero-kicker"),
                         H1("AR Aging for Collections", cls="ar-hero-title"),
-                    ),
-                    Div(
                         Div(
                             Span(cls="live-dot", aria_hidden="true"),
                             Span(as_of, id="ar-as-of"),
                             cls="ar-hero-meta",
+                            style="margin-top:0.65rem;",
+                        ),
+                        cls="ar-hero-brand",
+                    ),
+                    Div(
+                        Div(
+                            Span(fi(grand_count), style="color:rgba(255,255,255,0.7);font-size:13px;", id="header-count"),
+                            Span(fm(grand_total), style="color:#d5ff9f;font-size:clamp(1rem,4vw,1.125rem);font-weight:700;", id="header-total"),
+                            Span(f"Inv Amt: {fm(total_inv_amount)}", style="color:rgba(255,255,255,0.6);font-size:11px;", id="header-inv-amt"),
+                            cls="ar-hero-summary",
                         ),
                         Div(
-                            Span(f"{grand_count} invoices", style="color:rgba(255,255,255,0.7);font-size:13px;margin-right:8px;", id="header-count"),
-                            Span(fm(grand_total), style="color:#d5ff9f;font-size:18px;font-weight:700;", id="header-total"),
-                            Span(f"Inv Amt: {fm(total_inv_amount)}", style="color:rgba(255,255,255,0.6);font-size:11px;margin-left:6px;", id="header-inv-amt"),
-                            style="display:flex;align-items:center;gap:4px;margin-top:6px;",
-                        ),
-                        Div(
+                            Label(
+                                Span("Current AR"),
+                                Input(
+                                    type="checkbox",
+                                    id="ar-current-toggle",
+                                    onchange="setIncludeCurrentAR(this.checked)",
+                                ),
+                                Span(Span(cls="toggle-thumb"), cls="toggle-track"),
+                                cls="ar-current-toggle",
+                                title="Include current and 0–30 day invoices (not yet 31+ days past due)",
+                            ),
                             Button("?", cls="help-btn", onclick="openHelp()", title="About this report", style="background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);border-color:rgba(255,255,255,0.3);"),
+                            cls="ar-hero-buttons",
                             style="display:flex;align-items:center;gap:8px;margin-top:8px;",
                         ),
                         cls="ar-hero-actions",
@@ -2026,38 +2555,80 @@ def get(request: Request):
         Div(
             # KPI cards
             Div(
-                Div(Div("Total Outstanding", cls="label"), Div(fm(grand_total), cls="value"), Div(f"{grand_count} invoices past due 31+ days", cls="sub"),
+                Div(Div("Total Outstanding", cls="label"), Div(fm(grand_total), cls="value"), Div(fi(grand_count, "past due 31+ days"), cls="sub"),
                     cls="metric-card c-total", data_bucket="", onclick="filterByBucket('')",
-                    title=f"Total unpaid AR balance across all aging buckets.\n{grand_count} invoices | {fm(grand_total)} outstanding\nOriginal invoice total: {fm(total_inv_amount)}\nClick to clear filters and show all."),
-                Div(Div("31-60 Days", cls="label"), Div(fm(totals.get('31-60',0)), cls="value"), Div(f"{counts.get('31-60',0)} invoices", cls="sub"),
+                    title=f"Total unpaid AR balance across all aging buckets.\n{fi(grand_count)} | {fm(grand_total)} outstanding\nOriginal invoice total: {fm(total_inv_amount)}\nClick to clear filters and show all."),
+                Div(
+                    Div("0-30 Days", cls="label"),
+                    Div(fm(early_total), cls="value"),
+                    Div(fi(early_count), cls="sub"),
+                    cls="metric-card c-030", data_bucket="0-30", id="metric-card-0-30",
+                    onclick="filterByBucket('0-30')", hidden=True,
+                    title=f"Current and 0-30 days past due.\n{fi(early_count)} | {fm(early_total)} outstanding\nToggle Current AR in the header to include in the report."),
+                Div(Div("31-60 Days", cls="label"), Div(fm(totals.get('31-60',0)), cls="value"), Div(fi(counts.get('31-60',0)), cls="sub"),
                     cls="metric-card c-31", data_bucket="31-60", onclick="filterByBucket('31-60')",
-                    title=f"Invoices 31-60 days past due date.\n{counts.get('31-60',0)} invoices | {fm(totals.get('31-60',0))} outstanding\n{pct('31-60')}% of total AR balance\nClick to filter table to this bucket."),
-                Div(Div("61-90 Days", cls="label"), Div(fm(totals.get('61-90',0)), cls="value"), Div(f"{counts.get('61-90',0)} invoices", cls="sub"),
+                    title=f"Invoices 31-60 days past due date.\n{fi(counts.get('31-60',0))} | {fm(totals.get('31-60',0))} outstanding\n{pct('31-60')}% of total AR balance\nClick to filter table to this bucket."),
+                Div(Div("61-90 Days", cls="label"), Div(fm(totals.get('61-90',0)), cls="value"), Div(fi(counts.get('61-90',0)), cls="sub"),
                     cls="metric-card c-61", data_bucket="61-90", onclick="filterByBucket('61-90')",
-                    title=f"Invoices 61-90 days past due date.\n{counts.get('61-90',0)} invoices | {fm(totals.get('61-90',0))} outstanding\n{pct('61-90')}% of total AR balance\nClick to filter table to this bucket."),
-                Div(Div("91-120 Days", cls="label"), Div(fm(totals.get('91-120',0)), cls="value"), Div(f"{counts.get('91-120',0)} invoices", cls="sub"),
+                    title=f"Invoices 61-90 days past due date.\n{fi(counts.get('61-90',0))} | {fm(totals.get('61-90',0))} outstanding\n{pct('61-90')}% of total AR balance\nClick to filter table to this bucket."),
+                Div(Div("91-120 Days", cls="label"), Div(fm(totals.get('91-120',0)), cls="value"), Div(fi(counts.get('91-120',0)), cls="sub"),
                     cls="metric-card c-91", data_bucket="91-120", onclick="filterByBucket('91-120')",
-                    title=f"Invoices 91-120 days past due date.\n{counts.get('91-120',0)} invoices | {fm(totals.get('91-120',0))} outstanding\n{pct('91-120')}% of total AR balance\nClick to filter table to this bucket."),
-                Div(Div("120+ Days", cls="label"), Div(fm(totals.get('120+',0)), cls="value"), Div(f"{counts.get('120+',0)} invoices", cls="sub"),
+                    title=f"Invoices 91-120 days past due date.\n{fi(counts.get('91-120',0))} | {fm(totals.get('91-120',0))} outstanding\n{pct('91-120')}% of total AR balance\nClick to filter table to this bucket."),
+                Div(Div("120+ Days", cls="label"), Div(fm(totals.get('120+',0)), cls="value"), Div(fi(counts.get('120+',0)), cls="sub"),
                     cls="metric-card c-120", data_bucket="120+", onclick="filterByBucket('120+')",
-                    title=f"Invoices more than 120 days past due date.\n{counts.get('120+',0)} invoices | {fm(totals.get('120+',0))} outstanding\n{pct('120+')}% of total AR balance\nClick to filter table to this bucket."),
-                cls="metrics-row"
+                    title=f"Invoices more than 120 days past due date.\n{fi(counts.get('120+',0))} | {fm(totals.get('120+',0))} outstanding\n{pct('120+')}% of total AR balance\nClick to filter table to this bucket."),
+                id="metrics-row", cls="metrics-row"
             ),
 
             # Chart + Top 10
             Div(
                 Div(
                     H3("Balance by Aging Bucket"),
+                    P("Hover a band for balance; click to filter the table to that account in the bucket.", cls="bar-chart-hint"),
                     Div(
-                        *[Div(
-                            Div(fm(totals.get(b,0)), cls="bar-val"),
-                            Div(style=f"height:{max(int(totals.get(b,0)/mx*120),4)}px;background:{bc[b]};", cls="bar"),
-                            Div(b, cls="bar-lbl"),
-                            cls="bar-col", data_bucket=b, onclick=f"filterByBucket('{b}')"
-                        ) for b in ['31-60','61-90','91-120','120+']],
-                        cls="bar-chart"
+                        Div(
+                            Div(
+                                Div(
+                                    Div(fm(early_total), cls="bar-val"),
+                                    _stacked_bar(early_slices, early_total, _bar_h(early_total, mx), bc['0-30'], '0-30'),
+                                    cls="bar-plot",
+                                ),
+                                Div("0-30", cls="bar-lbl"),
+                                cls="bar-col bar-col-early", data_bucket="0-30", id="bar-col-0-30",
+                                data_amount=str(early_total),
+                                onclick="filterByBucket('0-30')", hidden=True,
+                            ),
+                            *[Div(
+                                Div(
+                                    Div(fm(totals.get(b,0)), cls="bar-val"),
+                                    _stacked_bar(bucket_slices[b], totals.get(b, 0), _bar_h(totals.get(b,0), mx), bc[b], b),
+                                    cls="bar-plot",
+                                ),
+                                Div(b, cls="bar-lbl"),
+                                cls="bar-col", data_bucket=b, data_amount=str(totals.get(b, 0)),
+                                onclick=f"filterByBucket('{b}')"
+                            ) for b in _BUCKETS_31_PLUS],
+                            cls="bar-chart",
+                        ),
+                        cls="bar-chart-scroll",
                     ),
-                    cls="panel"
+                    Div(
+                        Div(
+                            Div(cls="bct-accent"),
+                            Div(
+                                Div("", cls="bct-customer"),
+                                Div("", cls="bct-amount"),
+                                Div("", cls="bct-meta"),
+                                cls="bct-body",
+                            ),
+                            cls="bct-inner",
+                        ),
+                        id="bar-chart-tooltip",
+                        cls="bar-chart-tooltip",
+                        role="tooltip",
+                        aria_hidden="true",
+                    ),
+                    cls="panel panel-chart"
                 ),
                 Div(
                     H3("Top 10 Customers by Outstanding Balance"),
@@ -2078,6 +2649,7 @@ def get(request: Request):
                 Input(id="search", placeholder="Search customer or invoice...", oninput="applyFilters()"),
                 Select(
                     Option("All Buckets", value=""),
+                    Option("0-30 Days", value="0-30", id="bucket-opt-0-30", hidden=True),
                     Option("31-60 Days", value="31-60"),
                     Option("61-90 Days", value="61-90"),
                     Option("91-120 Days", value="91-120"),
@@ -2138,6 +2710,7 @@ def get(request: Request):
                                 onclick=f"event.stopPropagation(); openNotes('{r['INVOICE_NUMBER']}', '{_esc(str(r['CUSTOMER_NAME']))}')",
                             ),
                             data_bucket=r['AGING_BUCKET'],
+                            data_customer=str(r['CUSTOMER_NAME']),
                             data_inv=r['INVOICE_NUMBER'],
                             onclick=f"openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}', '{_esc(str(r['CUSTOMER_NAME']))}')",
                             onkeydown=f"if (event.key === 'Enter') openDrawer('{_esc(str(r['ACCOUNT_NUMBER']))}', '{_esc(str(r['CUSTOMER_NAME']))}')",
@@ -2149,7 +2722,7 @@ def get(request: Request):
                     ]),
                     Tfoot(Tr(
                         Td(""),
-                        Td(Span(f"{grand_count} invoices", cls="tf-count"), style="font-weight:700;"),
+                        Td(Span(fi(grand_count), cls="tf-count"), style="font-weight:700;"),
                         Td(""), Td(""),
                         Td(fm(total_inv_amount), cls="r tf-amt"),
                         Td(""),
@@ -2196,6 +2769,7 @@ def get(request: Request):
         ),
         # Inject notes data
         Script(f"initNotes({json.dumps(_NOTES)});"),
+        Script(f"initCurrentARMetrics({ar_metrics_json});"),
         # Easter egg modal
         Div(
             Div(
@@ -2235,15 +2809,16 @@ def get(request: Request):
                         Div(
                             H3("What This Report Is"),
                             Ul(
-                                Li("A ", Span("live AR aging report", cls="ee-highlight"), " showing all invoices 31+ days past due, sourced directly from NetSuite via Snowflake."),
-                                Li("Invoices are grouped into aging buckets: 31-60, 61-90, 91-120, and 120+ days past the due date."),
+                                Li("A ", Span("live AR aging report", cls="ee-highlight"), " showing unpaid invoices from NetSuite via Snowflake. By default, only invoices 31+ days past due appear."),
+                                Li("Turn on ", Span("Current AR", cls="ee-highlight"), " in the header to add a 0–30 day bucket (including not-yet-due invoices) and include those rows in the table and exports."),
+                                Li("Invoices are grouped into aging buckets: Current, 0–30, 31–60, 61–90, 91–120, and 120+ days relative to the due date."),
                                 Li("Each customer row links to a detail drawer with Iterable Org ID, Salesforce Account ID, bill-to/ship-to addresses, and SFDC contacts."),
                                 Li("Collection notes can be added per invoice and persist in-session."),
                             ),
                             H3("What This Report Is NOT"),
                             Ul(
                                 Li("This is ", Span("not a static snapshot", cls="ee-highlight"), ". Data refreshes each time you load the page or click Refresh."),
-                                Li("This does ", Span("not", cls="ee-highlight"), " include invoices that are current (0-30 days) or not yet due."),
+                                Li("Invoices under 31 days past due are ", Span("hidden by default", cls="ee-highlight"), " until you enable Current AR."),
                                 Li("This does ", Span("not", cls="ee-highlight"), " modify NetSuite data. Notes are local to this app and do not sync back."),
                                 Li("SFDC contacts are matched by company name, not a direct CRM ID link. Some customers may show fewer contacts if the name match is imprecise."),
                             ),
@@ -2408,8 +2983,11 @@ def refresh_data():
 
 
 @rt("/export/{fmt}")
-def export_data(fmt: str):
+def export_data(fmt: str, request: Request):
     data = _CACHED_DATA or []
+    include_current = request.query_params.get("include_current", "").lower() in ("1", "true", "yes")
+    if not include_current:
+        data = [r for r in data if r['AGING_BUCKET'] in _BUCKETS_31_PLUS]
     headers = ["Account #", "Customer", "Invoice #", "Inv Date", "Inv Amount", "Due Date",
                "Balance", "Days Past Due", "Bucket", "Invoice Sent", "Promise to Pay",
                "Resolution Category", "Account Owner", "CSM", "CSM Manager", "AE", "CAM",
