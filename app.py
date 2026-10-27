@@ -61,7 +61,7 @@ def _query_snowflake(conn=None):
         WHERE t.TYPE = 'CustInvc'
           AND t._FIVETRAN_DELETED = false
           AND t.FOREIGNAMOUNTUNPAID > 0
-        ORDER BY c.ENTITYID::INT, t.TRANDATE
+        ORDER BY TRY_TO_NUMBER(c.ENTITYID) NULLS LAST, c.ENTITYID, t.TRANDATE
     """)
     rows = cur.fetchall()
     cols = [d[0] for d in cur.description]
@@ -2990,7 +2990,7 @@ def export_data(fmt: str, request: Request):
         data = [r for r in data if r['AGING_BUCKET'] in _BUCKETS_31_PLUS]
     headers = ["Account #", "Customer", "Invoice #", "Inv Date", "Inv Amount", "Due Date",
                "Balance", "Days Past Due", "Bucket", "Invoice Sent", "Promise to Pay",
-               "Resolution Category", "Account Owner", "CSM", "CSM Manager", "AE", "CAM",
+               "Resolution Category", "Account Owner", "CSM Manager", "AE", "CAM",
                "Market Segment", "Subsidiary", "Category", "Payment Method", "Customer Bank"]
     rows = []
     # Build account-level enrichment — use cached data only (no blocking fetches)
@@ -3015,7 +3015,6 @@ def export_data(fmt: str, request: Request):
             'Yes' if _NOTES.get(f"ptp_{inv_num}") else 'No',
             _NOTES.get(f"res_{acct}", {}).get('resolution_category', ''),
             str(d.get('ACCOUNT_OWNER') or ''),
-            str(d.get('CSM') or ''),
             str(d.get('CSM_MANAGER') or ''),
             str(d.get('AE') or ''),
             str(d.get('CAM') or ''),
